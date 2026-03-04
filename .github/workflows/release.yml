@@ -86,16 +86,27 @@ jobs:
           set -euo pipefail
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           if [ -z "${VERSION_NAME}" ] || [ "${VERSION_NAME}" = "${GITHUB_REF_NAME}" ]; then
-            echo "Invalid tag format: ${GITHUB_REF_NAME}. Expected vX.Y.Z" >&2
+            echo "Invalid tag format: ${GITHUB_REF_NAME}. Expected v1 / v1.2 / v1.2.3 (optional -suffix/+meta)." >&2
             exit 1
           fi
 
-          BASE_VERSION="${VERSION_NAME%%-*}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_VERSION}.0.0"
-          if ! [[ "${MAJOR}" =~ ^[0-9]+$ && "${MINOR}" =~ ^[0-9]+$ && "${PATCH}" =~ ^[0-9]+$ ]]; then
+          BASE_VERSION="${VERSION_NAME%%[-+]*}"
+          IFS='.' read -r -a VERSION_PARTS <<< "${BASE_VERSION}"
+          if [ "${#VERSION_PARTS[@]}" -lt 1 ] || [ "${#VERSION_PARTS[@]}" -gt 3 ]; then
             echo "Tag must be numeric semver, for example v1.2.3" >&2
             exit 1
           fi
+
+          for part in "${VERSION_PARTS[@]}"; do
+            if ! [[ "${part}" =~ ^[0-9]+$ ]]; then
+              echo "Tag must be numeric semver, for example v1.2.3" >&2
+              exit 1
+            fi
+          done
+
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]:-0}"
+          PATCH="${VERSION_PARTS[2]:-0}"
 
           VERSION_CODE=$((10#${MAJOR} * 10000 + 10#${MINOR} * 100 + 10#${PATCH}))
           echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
