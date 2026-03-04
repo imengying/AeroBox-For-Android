@@ -56,7 +56,7 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           export PATH="$(go env GOPATH)/bin:${PATH}"
-          gomobile init -ndk "${AEROBOX_ANDROID_NDK}"
+          gomobile init
 
           git clone --depth 1 --branch "${SING_BOX_VERSION}" https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
           pushd "${RUNNER_TEMP}/sing-box"
