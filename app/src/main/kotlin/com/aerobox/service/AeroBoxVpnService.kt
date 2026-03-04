@@ -167,9 +167,9 @@ class AeroBoxVpnService : VpnService() {
         speedTickerJob = serviceScope.launch {
             while (isActive) {
                 delay(2000)
-                val stats = VpnStateManager.trafficStats.value
-                val upSpeed = NetworkUtils.formatBytes(stats.uploadSpeed) + "/s"
-                val downSpeed = NetworkUtils.formatBytes(stats.downloadSpeed) + "/s"
+                val state = VpnStateManager.vpnState.value
+                val upSpeed = NetworkUtils.formatBytes(state.uploadSpeed) + "/s"
+                val downSpeed = NetworkUtils.formatBytes(state.downloadSpeed) + "/s"
                 val text = "↑ $upSpeed  ↓ $downSpeed"
                 val notification = buildNotification(text)
                 val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
