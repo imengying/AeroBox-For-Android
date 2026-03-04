@@ -22,11 +22,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17 (libbox)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "17"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -111,6 +111,12 @@ jobs:
           VERSION_CODE=$((10#${MAJOR} * 10000 + 10#${MINOR} * 100 + 10#${PATCH}))
           echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
           echo "AEROBOX_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
+
+      - name: Switch to JDK 21 (Android build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
       - name: Build release APK
         env:
