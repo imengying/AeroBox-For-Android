@@ -1,0 +1,170 @@
+name: Tag Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    env:
+      SING_BOX_VERSION: v1.13.0
+      ANDROID_NDK_VERSION: 28.2.13676358
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
+          echo "AEROBOX_ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Build libbox.aar
+        run: |
+          set -euo pipefail
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          export PATH="$(go env GOPATH)/bin:${PATH}"
+          gomobile init
+
+          git clone --depth 1 --branch "${SING_BOX_VERSION}" https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
+          pushd "${RUNNER_TEMP}/sing-box"
+          go run ./cmd/internal/build_libbox -target android -android-ndk "${AEROBOX_ANDROID_NDK}" 2>&1 | tee "${RUNNER_TEMP}/libbox-build.log"
+          AAR_PATH="$(find . -type f -name 'libbox.aar' | head -n 1)"
+          if [ -z "${AAR_PATH}" ]; then
+            echo "libbox.aar was not generated." >&2
+            exit 1
+          fi
+          cp "${AAR_PATH}" "${GITHUB_WORKSPACE}/app/libs/libbox.aar"
+          popd
+
+      - name: Decode signing keystore (optional)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "${RUNNER_TEMP}/release.jks"
+          echo "AEROBOX_KEYSTORE_PATH=${RUNNER_TEMP}/release.jks" >> "${GITHUB_ENV}"
+
+      - name: Derive version from tag
+        run: |
+          set -euo pipefail
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          if [ -z "${VERSION_NAME}" ] || [ "${VERSION_NAME}" = "${GITHUB_REF_NAME}" ]; then
+            echo "Invalid tag format: ${GITHUB_REF_NAME}. Expected vX.Y.Z" >&2
+            exit 1
+          fi
+
+          BASE_VERSION="${VERSION_NAME%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_VERSION}.0.0"
+          if ! [[ "${MAJOR}" =~ ^[0-9]+$ && "${MINOR}" =~ ^[0-9]+$ && "${PATCH}" =~ ^[0-9]+$ ]]; then
+            echo "Tag must be numeric semver, for example v1.2.3" >&2
+            exit 1
+          fi
+
+          VERSION_CODE=$((10#${MAJOR} * 10000 + 10#${MINOR} * 100 + 10#${PATCH}))
+          echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
+          echo "AEROBOX_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ env.AEROBOX_KEYSTORE_PATH }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          AEROBOX_VERSION_NAME: ${{ env.AEROBOX_VERSION_NAME }}
+          AEROBOX_VERSION_CODE: ${{ env.AEROBOX_VERSION_CODE }}
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          EXTRA_ARGS+=(
+            "-PAEROBOX_VERSION_NAME=${AEROBOX_VERSION_NAME}"
+            "-PAEROBOX_VERSION_CODE=${AEROBOX_VERSION_CODE}"
+          )
+          if [ -n "${KEYSTORE_PATH:-}" ]; then
+            EXTRA_ARGS+=(
+              "-Pandroid.injected.signing.store.file=${KEYSTORE_PATH}"
+              "-Pandroid.injected.signing.store.password=${KEYSTORE_PASSWORD}"
+              "-Pandroid.injected.signing.key.alias=${KEY_ALIAS}"
+              "-Pandroid.injected.signing.key.password=${KEY_PASSWORD}"
+            )
+          fi
+          gradle --stacktrace :app:assembleRelease "${EXTRA_ARGS[@]}" 2>&1 | tee "${RUNNER_TEMP}/gradle-build.log"
+
+      - name: Debug logs and directory tree on failure
+        if: failure()
+        run: |
+          set +e
+          echo "========== libbox build log =========="
+          if [ -f "${RUNNER_TEMP}/libbox-build.log" ]; then
+            cat "${RUNNER_TEMP}/libbox-build.log"
+          else
+            echo "No libbox build log found."
+          fi
+
+          echo "========== gradle build log =========="
+          if [ -f "${RUNNER_TEMP}/gradle-build.log" ]; then
+            cat "${RUNNER_TEMP}/gradle-build.log"
+          else
+            echo "No gradle build log found."
+          fi
+
+          echo "========== sing-box directory tree =========="
+          if [ -d "${RUNNER_TEMP}/sing-box" ]; then
+            find "${RUNNER_TEMP}/sing-box" -maxdepth 4 -print | sort
+          else
+            echo "No sing-box directory found."
+          fi
+
+          echo "========== app/libs =========="
+          ls -la "${GITHUB_WORKSPACE}/app/libs" || true
+
+          echo "========== app/build/outputs =========="
+          if [ -d "${GITHUB_WORKSPACE}/app/build/outputs" ]; then
+            find "${GITHUB_WORKSPACE}/app/build/outputs" -maxdepth 5 -print | sort
+          else
+            echo "No app/build/outputs directory found."
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aerobox-release-${{ github.ref_name || github.run_number }}
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AeroBox For Android ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            app/build/outputs/apk/release/*.apk

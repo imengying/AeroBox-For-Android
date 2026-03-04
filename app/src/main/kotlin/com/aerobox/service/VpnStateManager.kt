@@ -1,0 +1,44 @@
+package com.aerobox.service
+
+import com.aerobox.data.model.ProxyNode
+import com.aerobox.data.model.VpnState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+object VpnStateManager {
+    private val _vpnState = MutableStateFlow(VpnState())
+    val vpnState: StateFlow<VpnState> = _vpnState.asStateFlow()
+
+    fun updateConnectionState(isConnected: Boolean, node: ProxyNode?) {
+        val current = _vpnState.value
+        _vpnState.value = current.copy(
+            isConnected = isConnected,
+            currentNode = if (isConnected) node else null,
+            connectionTime = if (isConnected) System.currentTimeMillis() else 0L
+        )
+    }
+
+    fun updateTrafficStats(
+        uploadSpeed: Long,
+        downloadSpeed: Long,
+        totalUpload: Long,
+        totalDownload: Long
+    ) {
+        _vpnState.value = _vpnState.value.copy(
+            uploadSpeed = uploadSpeed,
+            downloadSpeed = downloadSpeed,
+            totalUpload = totalUpload,
+            totalDownload = totalDownload
+        )
+    }
+
+    fun resetStats() {
+        _vpnState.value = _vpnState.value.copy(
+            uploadSpeed = 0,
+            downloadSpeed = 0,
+            totalUpload = 0,
+            totalDownload = 0
+        )
+    }
+}
