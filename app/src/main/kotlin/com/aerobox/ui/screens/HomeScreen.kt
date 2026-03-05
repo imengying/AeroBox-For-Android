@@ -136,7 +136,7 @@ private fun RoutingModeBar(
     selected: RoutingMode,
     onSelect: (RoutingMode) -> Unit
 ) {
-    // Show 3 main modes; GFW_LIST stays in settings for advanced users
+    // Show the currently supported 3 routing modes.
     val modes = listOf(
         RoutingMode.RULE_BASED to "规则",
         RoutingMode.GLOBAL_PROXY to "全局",

@@ -77,7 +77,7 @@ object ConfigGenerator {
         val dns = JSONObject().put("servers", servers)
 
         // Only add DNS routing rules for rule-based modes
-        if (routingMode == RoutingMode.RULE_BASED || routingMode == RoutingMode.GFW_LIST) {
+        if (routingMode == RoutingMode.RULE_BASED) {
             dns.put(
                 "rules",
                 JSONArray().put(
@@ -209,28 +209,6 @@ object ConfigGenerator {
                 )
             }
 
-            RoutingMode.GFW_LIST -> {
-                route.put("final", "direct")
-                route.put(
-                    "rules",
-                    JSONArray()
-                        .put(
-                            JSONObject()
-                                .put("protocol", "dns")
-                                .put("outbound", "dns-out")
-                        )
-                        .put(
-                            JSONObject()
-                                .put("geosite", JSONArray().put("gfw"))
-                                .put("outbound", "proxy")
-                        )
-                        .put(
-                            JSONObject()
-                                .put("geosite", JSONArray().put("category-ads-all"))
-                                .put("outbound", "block")
-                        )
-                )
-            }
         }
 
         return route
