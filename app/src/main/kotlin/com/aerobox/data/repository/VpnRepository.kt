@@ -25,9 +25,10 @@ class VpnRepository(private val context: Context) {
         context.startService(intent)
     }
 
-    fun getTrafficStats(): LongArray =
-        runCatching { SingBoxNative.getTrafficStats() }.getOrDefault(longArrayOf(0L, 0L))
-
-    fun testConfig(config: String): Boolean =
-        runCatching { SingBoxNative.testConfig(config) }.getOrDefault(false)
+    /**
+     * Validate config via libbox. Returns null if valid, error message otherwise.
+     */
+    fun checkConfig(config: String): String? =
+        SingBoxNative.checkConfig(config)
 }
+

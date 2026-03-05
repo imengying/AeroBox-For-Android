@@ -4,20 +4,22 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Build
 import androidx.room.Room
 import com.aerobox.data.database.AppDatabase
+import com.aerobox.core.native.SingBoxNative
 
 class AeroBoxApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        appInstance = this
+        _appInstance = this
 
-        // Ensure singleton initialization happens once for the process.
-        val unusedDatabase = database
+        // Ensure singleton initialization
+        database
         createNotificationChannel()
-        runCatching { System.loadLibrary("box") }
+        SingBoxNative.setup(this)
     }
 
     private fun createNotificationChannel() {
@@ -35,14 +37,20 @@ class AeroBoxApplication : Application() {
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "aerobox_vpn_channel"
 
-        private lateinit var appInstance: AeroBoxApplication
+        private lateinit var _appInstance: AeroBoxApplication
+
+        val appInstance: AeroBoxApplication get() = _appInstance
+
+        val connectivity: ConnectivityManager
+            get() = _appInstance.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val database: AppDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             Room.databaseBuilder(
-                appInstance,
+                _appInstance,
                 AppDatabase::class.java,
                 "aerobox.db"
             ).fallbackToDestructiveMigration().build()
         }
     }
 }
+

@@ -104,22 +104,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     return@collect
                 }
 
-                var previous = vpnRepository.getTrafficStats()
+                val uid = android.os.Process.myUid()
+                var prevTx = android.net.TrafficStats.getUidTxBytes(uid)
+                var prevRx = android.net.TrafficStats.getUidRxBytes(uid)
+
                 while (isActive && vpnRepository.isRunning.value) {
                     delay(1_000)
-                    val current = vpnRepository.getTrafficStats()
-                    val totalUpload = current.getOrElse(0) { 0L }
-                    val totalDownload = current.getOrElse(1) { 0L }
-                    val uploadSpeed = (totalUpload - previous.getOrElse(0) { 0L }).coerceAtLeast(0L)
-                    val downloadSpeed = (totalDownload - previous.getOrElse(1) { 0L }).coerceAtLeast(0L)
+                    val curTx = android.net.TrafficStats.getUidTxBytes(uid)
+                    val curRx = android.net.TrafficStats.getUidRxBytes(uid)
+                    val uploadSpeed = (curTx - prevTx).coerceAtLeast(0L)
+                    val downloadSpeed = (curRx - prevRx).coerceAtLeast(0L)
 
                     VpnStateManager.updateTrafficStats(
                         uploadSpeed = uploadSpeed,
                         downloadSpeed = downloadSpeed,
-                        totalUpload = totalUpload,
-                        totalDownload = totalDownload
+                        totalUpload = curTx,
+                        totalDownload = curRx
                     )
-                    previous = current
+                    prevTx = curTx
+                    prevRx = curRx
                 }
             }
         }
@@ -175,8 +178,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     enableSocksInbound = enableSocksInbound,
                     enableHttpInbound = enableHttpInbound
                 )
-                if (!vpnRepository.testConfig(config)) {
-                    context.showToast(context.getString(com.aerobox.R.string.operation_failed))
+                val configError = vpnRepository.checkConfig(config)
+                if (configError != null) {
+                    context.showToast("${context.getString(com.aerobox.R.string.operation_failed)}: $configError")
                     return@launch
                 }
                 VpnStateManager.updateConnectionState(true, node)

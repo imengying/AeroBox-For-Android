@@ -20,6 +20,10 @@
     native <methods>;
 }
 
+# Keep gomobile-generated libbox classes
+-keep class io.nekohasekai.libbox.** { *; }
+-dontwarn io.nekohasekai.libbox.**
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
