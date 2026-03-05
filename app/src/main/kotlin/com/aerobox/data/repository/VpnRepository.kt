@@ -22,10 +22,13 @@ class VpnRepository(private val context: Context) {
 
     val isRunning: StateFlow<Boolean> = AeroBoxVpnService.isRunning
 
-    fun startVpn(config: String) {
+    fun startVpn(config: String, nodeId: Long? = null) {
         val intent = Intent(context, AeroBoxVpnService::class.java).apply {
             action = AeroBoxVpnService.ACTION_START
             putExtra(AeroBoxVpnService.EXTRA_CONFIG, config)
+            if (nodeId != null && nodeId > 0L) {
+                putExtra(AeroBoxVpnService.EXTRA_NODE_ID, nodeId)
+            }
         }
         ContextCompat.startForegroundService(context, intent)
     }
@@ -60,8 +63,10 @@ class VpnRepository(private val context: Context) {
         val enableHttpInbound = PreferenceManager.enableHttpInboundFlow(context).first()
         val enableIPv6 = PreferenceManager.enableIPv6Flow(context).first()
         val enableGeoRules = PreferenceManager.enableGeoRulesFlow(context).first()
-        val enableGeoCnDirect = PreferenceManager.enableGeoCnDirectFlow(context).first()
+        val enableGeoCnDomainRule = PreferenceManager.enableGeoCnDomainRuleFlow(context).first()
+        val enableGeoCnIpRule = PreferenceManager.enableGeoCnIpRuleFlow(context).first()
         val enableGeoAdsBlock = PreferenceManager.enableGeoAdsBlockFlow(context).first()
+        val enableGeoBlockQuic = PreferenceManager.enableGeoBlockQuicFlow(context).first()
 
         val geoIpPath = if (enableGeoRules) {
             GeoAssetManager
@@ -89,8 +94,10 @@ class VpnRepository(private val context: Context) {
             enableSocksInbound = enableSocksInbound,
             enableHttpInbound = enableHttpInbound,
             enableIPv6 = enableIPv6,
-            enableGeoCnDirect = enableGeoCnDirect,
-            enableGeoAdsBlock = enableGeoAdsBlock,
+            enableGeoCnDomainRule = enableGeoRules && enableGeoCnDomainRule,
+            enableGeoCnIpRule = enableGeoRules && enableGeoCnIpRule,
+            enableGeoAdsBlock = enableGeoRules && enableGeoAdsBlock,
+            enableGeoBlockQuic = enableGeoRules && enableGeoBlockQuic,
             geoipPath = geoIpPath,
             geositePath = geoSitePath
         )
@@ -107,8 +114,10 @@ class VpnRepository(private val context: Context) {
                 enableSocksInbound = enableSocksInbound,
                 enableHttpInbound = enableHttpInbound,
                 enableIPv6 = enableIPv6,
-                enableGeoCnDirect = false,
+                enableGeoCnDomainRule = false,
+                enableGeoCnIpRule = false,
                 enableGeoAdsBlock = false,
+                enableGeoBlockQuic = false,
                 geoipPath = null,
                 geositePath = null
             )

@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aerobox.data.model.ProxyNode
+import java.util.Locale
 
 private enum class SortMode { NAME, LATENCY }
 
@@ -260,7 +261,7 @@ private fun NodeItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${node.type.name} · ${node.server}:${node.port}",
+                    text = node.type.displayName(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -298,4 +299,15 @@ private fun LatencyBadge(latency: Int, onClick: () -> Unit) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
+}
+
+private fun Enum<*>.displayName(): String {
+    return name
+        .lowercase(Locale.ROOT)
+        .split('_')
+        .joinToString(" ") { token ->
+            token.replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase(Locale.ROOT) else ch.toString()
+            }
+        }
 }

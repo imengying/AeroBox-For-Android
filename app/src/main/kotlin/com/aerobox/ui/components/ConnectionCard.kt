@@ -17,11 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
 import com.aerobox.ui.icons.AppIcons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +46,6 @@ fun ConnectionCard(
     connectionDuration: String,
     onToggleConnection: () -> Unit,
     onNodeNameClick: () -> Unit = {},
-    onTestNetwork: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Pulse animation when connected
@@ -135,7 +131,7 @@ fun ConnectionCard(
 
         Spacer(Modifier.height(20.dp))
 
-        // ── Node selector pill ──
+        // ── Node selector ──
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -160,22 +156,6 @@ fun ConnectionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .clickable { onTestNetwork() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Outlined.Info,
-                    contentDescription = "网络检测",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
                 )
             }
         }

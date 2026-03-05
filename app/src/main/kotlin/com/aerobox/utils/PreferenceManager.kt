@@ -35,8 +35,10 @@ object PreferenceManager {
     private val ENABLE_IPV6 = booleanPreferencesKey("enable_ipv6")
     private val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
     private val ENABLE_GEO_RULES = booleanPreferencesKey("enable_geo_rules")
-    private val ENABLE_GEO_CN_DIRECT = booleanPreferencesKey("enable_geo_cn_direct")
+    private val ENABLE_GEO_CN_DOMAIN_RULE = booleanPreferencesKey("enable_geo_cn_domain_rule")
+    private val ENABLE_GEO_CN_IP_RULE = booleanPreferencesKey("enable_geo_cn_ip_rule")
     private val ENABLE_GEO_ADS_BLOCK = booleanPreferencesKey("enable_geo_ads_block")
+    private val ENABLE_GEO_BLOCK_QUIC = booleanPreferencesKey("enable_geo_block_quic")
 
     // ── Existing settings ──
 
@@ -98,11 +100,17 @@ object PreferenceManager {
     fun enableGeoRulesFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[ENABLE_GEO_RULES] ?: false }
 
-    fun enableGeoCnDirectFlow(context: Context): Flow<Boolean> =
-        context.dataStore.data.map { it[ENABLE_GEO_CN_DIRECT] ?: true }
+    fun enableGeoCnDomainRuleFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_CN_DOMAIN_RULE] ?: true }
+
+    fun enableGeoCnIpRuleFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_CN_IP_RULE] ?: true }
 
     fun enableGeoAdsBlockFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[ENABLE_GEO_ADS_BLOCK] ?: true }
+
+    fun enableGeoBlockQuicFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_BLOCK_QUIC] ?: true }
 
     // ── Setters ──
 
@@ -180,11 +188,19 @@ object PreferenceManager {
         context.dataStore.edit { it[ENABLE_GEO_RULES] = enabled }
     }
 
-    suspend fun setEnableGeoCnDirect(context: Context, enabled: Boolean) {
-        context.dataStore.edit { it[ENABLE_GEO_CN_DIRECT] = enabled }
+    suspend fun setEnableGeoCnDomainRule(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_CN_DOMAIN_RULE] = enabled }
+    }
+
+    suspend fun setEnableGeoCnIpRule(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_CN_IP_RULE] = enabled }
     }
 
     suspend fun setEnableGeoAdsBlock(context: Context, enabled: Boolean) {
         context.dataStore.edit { it[ENABLE_GEO_ADS_BLOCK] = enabled }
+    }
+
+    suspend fun setEnableGeoBlockQuic(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_BLOCK_QUIC] = enabled }
     }
 }

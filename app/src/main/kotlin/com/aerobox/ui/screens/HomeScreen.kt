@@ -8,23 +8,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -94,13 +90,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         permissionLauncher.launch(permissionIntent)
                     }
                 },
-                onNodeNameClick = { showNodeList = true },
-                onTestNetwork = {
-                    if (selectedNode != null) {
-                        viewModel.testSingleNodeLatency(selectedNode!!)
-                    }
-                    viewModel.refreshNetworkInfo()
-                }
+                onNodeNameClick = { showNodeList = true }
             )
         }
 
@@ -111,16 +101,21 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             )
         }
 
-        // ── Routing mode segmented bar ──
         item {
-            RoutingModeBar(
-                selected = routingMode,
-                onSelect = { viewModel.setRoutingMode(it) }
-            )
-        }
-
-        item {
-            TrafficStatsCard(stats = trafficStats)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                RoutingModeColumn(
+                    selected = routingMode,
+                    onSelect = { viewModel.setRoutingMode(it) },
+                    modifier = Modifier.weight(0.35f)
+                )
+                TrafficStatsCard(
+                    stats = trafficStats,
+                    modifier = Modifier.weight(0.65f)
+                )
+            }
         }
 
         if (selectedNode == null) {
@@ -209,88 +204,83 @@ private fun NetworkDetectCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Text(
                 text = "网络检测",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            Text(
+                text = ip,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Text(
-            text = ip,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
-        )
     }
 }
 
 /**
- * Rounded segmented bar for routing mode (规则 / 全局 / 直连).
+ * Vertical mode selector (规则 / 全局 / 直连).
  */
 @Composable
-private fun RoutingModeBar(
+private fun RoutingModeColumn(
     selected: RoutingMode,
-    onSelect: (RoutingMode) -> Unit
+    onSelect: (RoutingMode) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    // Show the currently supported 3 routing modes.
     val modes = listOf(
         RoutingMode.RULE_BASED to "规则",
         RoutingMode.GLOBAL_PROXY to "全局",
         RoutingMode.DIRECT to "直连"
     )
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
-        modes.forEach { (mode, label) ->
-            val isSelected = selected == mode
-            val bgColor by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerHighest,
-                label = "segBg"
-            )
-            val textColor by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "segText"
-            )
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(bgColor)
-                    .clickable { onSelect(mode) }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = textColor,
-                    textAlign = TextAlign.Center
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            modes.forEach { (mode, label) ->
+                val isSelected = selected == mode
+                val bgColor by animateColorAsState(
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    label = "modeBg"
                 )
+                val textColor by animateColorAsState(
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "modeText"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(bgColor)
+                        .clickable { onSelect(mode) }
+                        .padding(vertical = 12.dp, horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = textColor,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }

@@ -65,10 +65,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val enableGeoRules: StateFlow<Boolean> = PreferenceManager.enableGeoRulesFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val enableGeoCnDirect: StateFlow<Boolean> = PreferenceManager.enableGeoCnDirectFlow(appContext)
+    val enableGeoCnDomainRule: StateFlow<Boolean> = PreferenceManager.enableGeoCnDomainRuleFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val enableGeoCnIpRule: StateFlow<Boolean> = PreferenceManager.enableGeoCnIpRuleFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     val enableGeoAdsBlock: StateFlow<Boolean> = PreferenceManager.enableGeoAdsBlockFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val enableGeoBlockQuic: StateFlow<Boolean> = PreferenceManager.enableGeoBlockQuicFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     suspend fun setDarkMode(mode: String) {
@@ -140,11 +146,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         PreferenceManager.setEnableGeoRules(appContext, enabled)
     }
 
-    suspend fun setEnableGeoCnDirect(enabled: Boolean) {
-        PreferenceManager.setEnableGeoCnDirect(appContext, enabled)
+    suspend fun setEnableGeoCnDomainRule(enabled: Boolean) {
+        PreferenceManager.setEnableGeoCnDomainRule(appContext, enabled)
+    }
+
+    suspend fun setEnableGeoCnIpRule(enabled: Boolean) {
+        PreferenceManager.setEnableGeoCnIpRule(appContext, enabled)
     }
 
     suspend fun setEnableGeoAdsBlock(enabled: Boolean) {
         PreferenceManager.setEnableGeoAdsBlock(appContext, enabled)
+    }
+
+    suspend fun setEnableGeoBlockQuic(enabled: Boolean) {
+        PreferenceManager.setEnableGeoBlockQuic(appContext, enabled)
     }
 }

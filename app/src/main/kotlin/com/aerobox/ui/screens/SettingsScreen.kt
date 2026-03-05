@@ -74,8 +74,10 @@ fun SettingsScreen(
     val enableIPv6 by viewModel.enableIPv6.collectAsStateWithLifecycle()
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
     val enableGeoRules by viewModel.enableGeoRules.collectAsStateWithLifecycle()
-    val enableGeoCnDirect by viewModel.enableGeoCnDirect.collectAsStateWithLifecycle()
+    val enableGeoCnDomainRule by viewModel.enableGeoCnDomainRule.collectAsStateWithLifecycle()
+    val enableGeoCnIpRule by viewModel.enableGeoCnIpRule.collectAsStateWithLifecycle()
     val enableGeoAdsBlock by viewModel.enableGeoAdsBlock.collectAsStateWithLifecycle()
+    val enableGeoBlockQuic by viewModel.enableGeoBlockQuic.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var showDnsDialog by remember { mutableStateOf(false) }
@@ -168,71 +170,97 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
-            SettingItem(
-                icon = { Icon(AppIcons.Security, contentDescription = null) },
-                title = "中国流量直连（Geo）",
-                supporting = "geosite:cn + geoip:cn",
-                trailing = {
-                    Switch(
-                        checked = enableGeoCnDirect,
-                        onCheckedChange = { scope.launch { viewModel.setEnableGeoCnDirect(it) } },
-                        enabled = enableGeoRules
-                    )
-                }
-            )
-        }
-        item {
-            SettingItem(
-                icon = { Icon(AppIcons.Security, contentDescription = null) },
-                title = "广告拦截（Geo）",
-                supporting = "geosite:category-ads-all",
-                trailing = {
-                    Switch(
-                        checked = enableGeoAdsBlock,
-                        onCheckedChange = { scope.launch { viewModel.setEnableGeoAdsBlock(it) } },
-                        enabled = enableGeoRules
-                    )
-                }
-            )
-        }
-        item {
-            val hasFiles = GeoAssetManager.hasLocalFiles(context)
-            val geoIpSize = GeoAssetManager.getGeoIpSize(context)
-            val geoSiteSize = GeoAssetManager.getGeoSiteSize(context)
-            SettingItem(
-                modifier = Modifier.clickable {
-                    if (!geoUpdating) {
-                        geoUpdating = true
-                        scope.launch {
-                            val ok = GeoAssetManager.updateAll(context)
-                            geoUpdating = false
-                            Toast.makeText(
-                                context,
-                                if (ok) "资源更新完成" else "更新失败，请检查网络",
-                                Toast.LENGTH_SHORT
-                            ).show()
+        if (enableGeoRules) {
+            item {
+                SettingItem(
+                    icon = { Icon(AppIcons.Security, contentDescription = null) },
+                    title = "屏蔽 QUIC",
+                    supporting = "network: udp + port: 443",
+                    trailing = {
+                        Switch(
+                            checked = enableGeoBlockQuic,
+                            onCheckedChange = { scope.launch { viewModel.setEnableGeoBlockQuic(it) } }
+                        )
+                    }
+                )
+            }
+            item {
+                SettingItem(
+                    icon = { Icon(AppIcons.Security, contentDescription = null) },
+                    title = "中国域名规则（Geo）",
+                    supporting = "geosite:cn",
+                    trailing = {
+                        Switch(
+                            checked = enableGeoCnDomainRule,
+                            onCheckedChange = { scope.launch { viewModel.setEnableGeoCnDomainRule(it) } }
+                        )
+                    }
+                )
+            }
+            item {
+                SettingItem(
+                    icon = { Icon(AppIcons.Security, contentDescription = null) },
+                    title = "中国 IP 规则（Geo）",
+                    supporting = "geoip:cn",
+                    trailing = {
+                        Switch(
+                            checked = enableGeoCnIpRule,
+                            onCheckedChange = { scope.launch { viewModel.setEnableGeoCnIpRule(it) } }
+                        )
+                    }
+                )
+            }
+            item {
+                SettingItem(
+                    icon = { Icon(AppIcons.Security, contentDescription = null) },
+                    title = "屏蔽广告（Geo）",
+                    supporting = "geosite:category-ads-all",
+                    trailing = {
+                        Switch(
+                            checked = enableGeoAdsBlock,
+                            onCheckedChange = { scope.launch { viewModel.setEnableGeoAdsBlock(it) } }
+                        )
+                    }
+                )
+            }
+            item {
+                val hasFiles = GeoAssetManager.hasLocalFiles(context)
+                val geoIpSize = GeoAssetManager.getGeoIpSize(context)
+                val geoSiteSize = GeoAssetManager.getGeoSiteSize(context)
+                SettingItem(
+                    modifier = Modifier.clickable {
+                        if (!geoUpdating) {
+                            geoUpdating = true
+                            scope.launch {
+                                val ok = GeoAssetManager.updateAll(context)
+                                geoUpdating = false
+                                Toast.makeText(
+                                    context,
+                                    if (ok) "资源更新完成" else "更新失败，请检查网络",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    icon = { Icon(AppIcons.Security, contentDescription = null) },
+                    title = if (hasFiles) "更新规则数据库" else "下载规则数据库",
+                    supporting = if (hasFiles) {
+                        "GeoIP: $geoIpSize · GeoSite: $geoSiteSize（官方源 SagerNet）"
+                    } else {
+                        "规则分流需要此资源（仅官方源 SagerNet）"
+                    },
+                    trailing = {
+                        if (geoUpdating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(4.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Filled.Refresh, contentDescription = null)
                         }
                     }
-                },
-                icon = { Icon(AppIcons.Security, contentDescription = null) },
-                title = if (hasFiles) "更新规则数据库" else "下载规则数据库",
-                supporting = if (hasFiles) {
-                    "GeoIP: $geoIpSize · GeoSite: $geoSiteSize（官方源 SagerNet）"
-                } else {
-                    "规则分流需要此资源（仅官方源 SagerNet）"
-                },
-                trailing = {
-                    if (geoUpdating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(4.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Icons.Filled.Refresh, contentDescription = null)
-                    }
-                }
-            )
+                )
+            }
         }
 
         // ── Inbound Proxy ──

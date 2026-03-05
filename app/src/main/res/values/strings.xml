@@ -38,6 +38,8 @@
     <string name="notification_title">AeroBox</string>
     <string name="notification_connecting">正在连接...</string>
     <string name="notification_connected">已连接</string>
+    <string name="notification_action_switch">切换</string>
+    <string name="notification_action_stop">停止</string>
     <string name="hint_add_subscription">请先添加订阅以获取节点配置</string>
     <string name="refresh">刷新</string>
     <string name="duration">连接时长</string>
@@ -64,5 +66,7 @@
     <string name="no_nodes">暂无节点</string>
     <string name="nodes_count">%d 个节点</string>
     <string name="tile_label">AeroBox</string>
+    <string name="tile_action_open">开启</string>
+    <string name="tile_action_close">关闭</string>
     <string name="enable_ipv6">IPv6 支持</string>
 </resources>

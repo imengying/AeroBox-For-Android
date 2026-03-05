@@ -8,7 +8,6 @@ import com.aerobox.AeroBoxApplication
 import com.aerobox.data.repository.SubscriptionRepository
 import com.aerobox.data.repository.VpnRepository
 import com.aerobox.service.AeroBoxVpnService
-import com.aerobox.service.VpnStateManager
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,11 +39,11 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
                 val vpnRepository = VpnRepository(context)
                 val config = vpnRepository.buildConfig(node)
-                VpnStateManager.updateConnectionState(true, node)
 
                 val startIntent = Intent(context, AeroBoxVpnService::class.java).apply {
                     action = AeroBoxVpnService.ACTION_START
                     putExtra(AeroBoxVpnService.EXTRA_CONFIG, config)
+                    putExtra(AeroBoxVpnService.EXTRA_NODE_ID, node.id)
                 }
                 ContextCompat.startForegroundService(context, startIntent)
             }

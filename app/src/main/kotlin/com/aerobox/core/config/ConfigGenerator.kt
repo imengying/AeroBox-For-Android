@@ -17,8 +17,10 @@ object ConfigGenerator {
         enableSocksInbound: Boolean = false,
         enableHttpInbound: Boolean = false,
         enableIPv6: Boolean = true,
-        enableGeoCnDirect: Boolean = true,
+        enableGeoCnDomainRule: Boolean = true,
+        enableGeoCnIpRule: Boolean = true,
         enableGeoAdsBlock: Boolean = true,
+        enableGeoBlockQuic: Boolean = true,
         geoipPath: String? = null,
         geositePath: String? = null
     ): String {
@@ -40,7 +42,7 @@ object ConfigGenerator {
                 localDns = localDns,
                 enableDoh = enableDoh,
                 routingMode = routingMode,
-                enableGeoCnDirect = enableGeoCnDirect && hasGeoSite
+                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSite
             )
         )
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
@@ -61,8 +63,10 @@ object ConfigGenerator {
                 routingMode = routingMode,
                 geoipPath = geoipPath,
                 geositePath = geositePath,
-                enableGeoCnDirect = enableGeoCnDirect && hasGeoSite && hasGeoIp,
-                enableGeoAdsBlock = enableGeoAdsBlock && hasGeoSite
+                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSite,
+                enableGeoCnIpRule = enableGeoCnIpRule && hasGeoIp,
+                enableGeoAdsBlock = enableGeoAdsBlock && hasGeoSite,
+                enableGeoBlockQuic = enableGeoBlockQuic
             )
         )
 
@@ -76,7 +80,7 @@ object ConfigGenerator {
         localDns: String,
         enableDoh: Boolean,
         routingMode: RoutingMode,
-        enableGeoCnDirect: Boolean
+        enableGeoCnDomainRule: Boolean
     ): JSONObject {
         val remoteAddress = if (enableDoh && !remoteDns.startsWith("tls://") && !remoteDns.startsWith("https://")) {
             "tls://$remoteDns"
@@ -100,15 +104,21 @@ object ConfigGenerator {
         val dns = JSONObject().put("servers", servers)
 
         // Only add DNS routing rules for rule-based modes
-        if (routingMode == RoutingMode.RULE_BASED && enableGeoCnDirect) {
-            dns.put(
-                "rules",
-                JSONArray().put(
+        if (routingMode == RoutingMode.RULE_BASED) {
+            val dnsRules = JSONArray()
+            fun addDnsLocalRule(country: String) {
+                dnsRules.put(
                     JSONObject()
-                        .put("geosite", "cn")
+                        .put("geosite", country)
                         .put("server", "local")
                 )
-            )
+            }
+
+            if (enableGeoCnDomainRule) addDnsLocalRule("cn")
+
+            if (dnsRules.length() > 0) {
+                dns.put("rules", dnsRules)
+            }
         }
 
         return dns
@@ -171,8 +181,10 @@ object ConfigGenerator {
         routingMode: RoutingMode,
         geoipPath: String? = null,
         geositePath: String? = null,
-        enableGeoCnDirect: Boolean = true,
-        enableGeoAdsBlock: Boolean = true
+        enableGeoCnDomainRule: Boolean = true,
+        enableGeoCnIpRule: Boolean = true,
+        enableGeoAdsBlock: Boolean = true,
+        enableGeoBlockQuic: Boolean = true
     ): JSONObject {
         val route = JSONObject()
             .put("auto_detect_interface", true)
@@ -207,10 +219,26 @@ object ConfigGenerator {
                             .put("outbound", "dns-out")
                     )
 
-                if (enableGeoCnDirect) {
+                if (enableGeoBlockQuic) {
+                    rules.put(
+                        JSONObject()
+                            .put("network", JSONArray().put("udp"))
+                            .put("port", JSONArray().put(443))
+                            .put("outbound", "block")
+                    )
+                }
+
+                if (enableGeoCnDomainRule) {
                     rules.put(
                         JSONObject()
                             .put("geosite", JSONArray().put("cn"))
+                            .put("outbound", "direct")
+                    )
+                }
+
+                if (enableGeoCnIpRule) {
+                    rules.put(
+                        JSONObject()
                             .put("geoip", JSONArray().put("cn"))
                             .put("outbound", "direct")
                     )

@@ -92,6 +92,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val connectionIssue: StateFlow<ConnectionIssue?> = _connectionIssue.asStateFlow()
 
     private var statsJob: Job? = null
+    private var detectIpJob: Job? = null
 
     init {
         observeSelectedNode()
@@ -206,8 +207,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     handleConnectionFailure(context, configError)
                     return@launch
                 }
-                VpnStateManager.updateConnectionState(true, node)
-                vpnRepository.startVpn(config)
+                vpnRepository.startVpn(config, node.id)
             }.onFailure {
                 VpnStateManager.updateConnectionState(false, null)
                 val details = it.message?.takeIf { msg -> msg.isNotBlank() }
@@ -278,8 +278,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshNetworkInfo() {
-        viewModelScope.launch {
-            _detectedIp.value = fetchPublicIp()
+        detectIpJob?.cancel()
+        detectIpJob = viewModelScope.launch {
+            _detectedIp.value = "检测中..."
+            _detectedIp.value = fetchPublicIp(selectedNode.value)
         }
     }
 
@@ -312,21 +314,53 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun fetchPublicIp(): String = withContext(Dispatchers.IO) {
-        val endpoints = listOf(
-            "https://api.ipify.org",
-            "https://ifconfig.me/ip",
-            "https://ipv4.icanhazip.com"
+    private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
+        val ipv4Endpoints = listOf(
+            "https://api4.ipify.org",
+            "https://ipv4.icanhazip.com",
+            "https://v4.ident.me"
         )
-        for (endpoint in endpoints) {
-            val ip = runCatching {
-                URL(endpoint).openStream().bufferedReader().use { it.readText().trim() }
-            }.getOrNull()
-            if (!ip.isNullOrBlank()) {
-                return@withContext ip
+        val ipv6Endpoints = listOf(
+            "https://api6.ipify.org",
+            "https://ipv6.icanhazip.com",
+            "https://v6.ident.me"
+        )
+
+        val preferIpv6Only = isIpv6Literal(node?.server.orEmpty())
+        val endpointGroups = if (preferIpv6Only) {
+            listOf(ipv6Endpoints)
+        } else {
+            listOf(ipv4Endpoints, ipv6Endpoints)
+        }
+
+        for (group in endpointGroups) {
+            for (endpoint in group) {
+                val ip = runCatching {
+                    URL(endpoint).openStream().bufferedReader().use { it.readText().trim() }
+                }.getOrNull()
+                if (!ip.isNullOrBlank() && isLikelyIpAddress(ip)) {
+                    return@withContext ip
+                }
             }
         }
         "检测失败，点击重试"
+    }
+
+    private fun isIpv6Literal(host: String): Boolean {
+        val value = host
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+            .substringBefore('%')
+        if (!value.contains(':')) return false
+        return value.all { it.isDigit() || it in "abcdefABCDEF:." }
+    }
+
+    private fun isLikelyIpAddress(value: String): Boolean {
+        val text = value.trim()
+        val ipv4 = Regex("""^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$""")
+        val ipv6 = Regex("""^[0-9A-Fa-f:]+(%[0-9A-Za-z._~-]+)?$""")
+        return ipv4.matches(text) || (text.contains(':') && ipv6.matches(text))
     }
 
     private fun handleConnectionFailure(context: Context, rawError: String) {

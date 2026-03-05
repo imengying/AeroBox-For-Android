@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "com.aerobox"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 35
         versionCode = ciVersionCode ?: 1
         versionName = ciVersionName ?: "1.0.0"

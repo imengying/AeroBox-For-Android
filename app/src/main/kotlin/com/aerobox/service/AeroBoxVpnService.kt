@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.aerobox.AeroBoxApplication
 import com.aerobox.MainActivity
 import com.aerobox.R
+import com.aerobox.data.repository.VpnRepository
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.utils.PreferenceManager
 import io.nekohasekai.libbox.CommandServer
@@ -48,7 +49,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     companion object {
         const val ACTION_START = "com.aerobox.action.START"
         const val ACTION_STOP = "com.aerobox.action.STOP"
+        const val ACTION_SWITCH = "com.aerobox.action.SWITCH"
         const val EXTRA_CONFIG = "extra_config"
+        const val EXTRA_NODE_ID = "extra_node_id"
         const val NOTIFICATION_ID = 1001
         private const val TAG = "AeroBoxVpnService"
 
@@ -64,14 +67,23 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     // Auto-reconnect state
     private var lastConfig: String? = null
+    private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
     private val maxReconnectAttempts = 3
 
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == ACTION_STOP) {
-                stopService()
+            when (intent.action) {
+                ACTION_STOP -> {
+                    userRequestedStop = true
+                    stopService()
+                    stopSelf()
+                }
+
+                ACTION_SWITCH -> {
+                    switchNodeFromNotification()
+                }
             }
         }
     }
@@ -82,15 +94,22 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         when (intent?.action) {
             ACTION_START -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG).orEmpty()
+                val nodeId = intent.getLongExtra(EXTRA_NODE_ID, -1L)
                 userRequestedStop = false
                 reconnectAttempts = 0
                 lastConfig = config
-                startVpn(config)
+                if (nodeId > 0L) {
+                    lastNodeId = nodeId
+                }
+                startVpn(config, if (nodeId > 0L) nodeId else null)
             }
             ACTION_STOP -> {
                 userRequestedStop = true
                 stopService()
                 stopSelf()
+            }
+            ACTION_SWITCH -> {
+                switchNodeFromNotification()
             }
         }
         return START_STICKY
@@ -98,17 +117,20 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     // ─── VPN Lifecycle ───
 
-    private fun startVpn(config: String) {
+    private fun startVpn(config: String, nodeId: Long? = null) {
         serviceScope.launch {
             runCatching {
                 startForeground(
                     NOTIFICATION_ID,
-                    buildNotification(getString(R.string.notification_connecting))
+                    buildNotification(connected = false)
                 )
 
                 // Register close receiver
                 if (!receiverRegistered) {
-                    val filter = IntentFilter(ACTION_STOP)
+                    val filter = IntentFilter().apply {
+                        addAction(ACTION_STOP)
+                        addAction(ACTION_SWITCH)
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         registerReceiver(closeReceiver, filter, RECEIVER_NOT_EXPORTED)
                     } else {
@@ -118,41 +140,25 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 }
 
                 // Create and start CommandServer
-                val server = CommandServer(this@AeroBoxVpnService, this@AeroBoxVpnService)
-                server.start()
-                commandServer = server
+                val server = commandServer ?: CommandServer(this@AeroBoxVpnService, this@AeroBoxVpnService).also {
+                    it.start()
+                    commandServer = it
+                }
 
                 // Start or reload the sing-box service with config
-                val overrides = OverrideOptions().apply {
-                    // Per-app proxy
-                    val perAppEnabled = runBlocking {
-                        PreferenceManager.perAppProxyEnabledFlow(applicationContext).first()
-                    }
-                    if (perAppEnabled) {
-                        val mode = runBlocking {
-                            PreferenceManager.perAppProxyModeFlow(applicationContext).first()
-                        }
-                        val packages = runBlocking {
-                            PreferenceManager.perAppProxyPackagesFlow(applicationContext).first()
-                        }
-                        if (mode == "whitelist") {
-                            includePackage = PlatformInterfaceWrapper.StringArray(
-                                (packages + packageName).iterator()
-                            )
-                        } else {
-                            excludePackage = PlatformInterfaceWrapper.StringArray(
-                                (packages - packageName).iterator()
-                            )
-                        }
-                    }
-                }
+                val overrides = buildOverrideOptions()
 
                 server.startOrReloadService(config, overrides)
 
+                val connectedNode = resolveCurrentNode(nodeId)
+                if (connectedNode != null) {
+                    lastNodeId = connectedNode.id
+                }
+                VpnStateManager.updateConnectionState(true, connectedNode)
                 _isRunning.value = true
                 startForeground(
                     NOTIFICATION_ID,
-                    buildNotification(getString(R.string.notification_connected))
+                    buildNotification(connected = true)
                 )
                 startSpeedTicker()
 
@@ -161,6 +167,81 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 stopService()
             }
         }
+    }
+
+    private fun switchNodeFromNotification() {
+        serviceScope.launch {
+            runCatching {
+                val nodes = AeroBoxApplication.database.proxyNodeDao().getAllNodes().first()
+                if (nodes.isEmpty()) {
+                    Log.w(TAG, "No nodes available for switch action")
+                    return@runCatching
+                }
+
+                val selectedId = PreferenceManager.lastSelectedNodeIdFlow(applicationContext).first()
+                val currentId = if (selectedId > 0L) selectedId else lastNodeId
+                val currentIndex = nodes.indexOfFirst { it.id == currentId }
+                val nextNode = if (currentIndex >= 0) {
+                    nodes[(currentIndex + 1) % nodes.size]
+                } else {
+                    nodes.first()
+                }
+
+                PreferenceManager.setLastSelectedNodeId(applicationContext, nextNode.id)
+
+                val vpnRepository = VpnRepository(applicationContext)
+                val nextConfig = vpnRepository.buildConfig(nextNode)
+                val configError = vpnRepository.checkConfig(nextConfig)
+                if (configError != null) {
+                    Log.e(TAG, "Switch node config invalid: $configError")
+                    return@runCatching
+                }
+
+                userRequestedStop = false
+                reconnectAttempts = 0
+                lastNodeId = nextNode.id
+                lastConfig = nextConfig
+                startVpn(nextConfig, nextNode.id)
+            }.onFailure { e ->
+                Log.e(TAG, "switchNodeFromNotification failed", e)
+            }
+        }
+    }
+
+    private fun buildOverrideOptions(): OverrideOptions {
+        return OverrideOptions().apply {
+            // Per-app proxy
+            val perAppEnabled = runBlocking {
+                PreferenceManager.perAppProxyEnabledFlow(applicationContext).first()
+            }
+            if (perAppEnabled) {
+                val mode = runBlocking {
+                    PreferenceManager.perAppProxyModeFlow(applicationContext).first()
+                }
+                val packages = runBlocking {
+                    PreferenceManager.perAppProxyPackagesFlow(applicationContext).first()
+                }
+                if (mode == "whitelist") {
+                    includePackage = PlatformInterfaceWrapper.StringArray(
+                        (packages + packageName).iterator()
+                    )
+                } else {
+                    excludePackage = PlatformInterfaceWrapper.StringArray(
+                        (packages - packageName).iterator()
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun resolveCurrentNode(explicitNodeId: Long?): com.aerobox.data.model.ProxyNode? {
+        val nodeId = when {
+            explicitNodeId != null && explicitNodeId > 0L -> explicitNodeId
+            lastNodeId > 0L -> lastNodeId
+            else -> PreferenceManager.lastSelectedNodeIdFlow(applicationContext).first()
+        }
+        if (nodeId <= 0L) return null
+        return AeroBoxApplication.database.proxyNodeDao().getNodeById(nodeId)
     }
 
     private fun stopService() {
@@ -203,6 +284,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         // Called by libbox when the service stops (may be unexpected)
         vpnInterface?.close()
         vpnInterface = null
+        _isRunning.value = false
+        VpnStateManager.updateConnectionState(false, null)
 
         if (!userRequestedStop) {
             // Unexpected disconnect — try auto-reconnect
@@ -323,32 +406,89 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     // ─── Notification ───
 
-    private fun buildNotification(contentText: String): Notification {
+    private fun buildNotification(contentText: String = "", connected: Boolean = false): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, AeroBoxApplication.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_flight)
+        val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
+        val switchIntent = Intent(ACTION_SWITCH).setPackage(packageName)
+        val stopPendingIntent = PendingIntent.getBroadcast(
+            this,
+            101,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val switchPendingIntent = PendingIntent.getBroadcast(
+            this,
+            102,
+            switchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = if (connected) {
+            VpnStateManager.vpnState.value.currentNode
+                ?.name
+                ?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.notification_title)
+        } else {
+            getString(R.string.notification_title)
+        }
+        val statusText = if (connected) {
+            getString(R.string.notification_connected)
+        } else {
+            getString(R.string.notification_connecting)
+        }
+        val mergedContent = when {
+            contentText.isBlank() -> statusText
+            connected && contentText != statusText -> "$statusText · $contentText"
+            else -> contentText
+        }
+
+        val builder = NotificationCompat.Builder(this, AeroBoxApplication.NOTIFICATION_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(mergedContent)
+            .setSubText(statusText)
+            .setSmallIcon(R.drawable.ic_stat_aerobox)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
-            .build()
+            .setOnlyAlertOnce(true)
+
+        if (connected) {
+            builder
+                .addAction(
+                    android.R.drawable.ic_menu_rotate,
+                    getString(R.string.notification_action_switch),
+                    switchPendingIntent
+                )
+                .addAction(
+                    android.R.drawable.ic_media_pause,
+                    getString(R.string.notification_action_stop),
+                    stopPendingIntent
+                )
+        } else {
+            builder.addAction(
+                android.R.drawable.ic_media_pause,
+                getString(R.string.notification_action_stop),
+                stopPendingIntent
+            )
+        }
+
+        return builder.build()
     }
 
     private fun startSpeedTicker() {
         speedTickerJob?.cancel()
         speedTickerJob = serviceScope.launch {
             while (isActive) {
-                delay(2000)
+                delay(1000)
                 val state = VpnStateManager.vpnState.value
                 val upSpeed = NetworkUtils.formatBytes(state.uploadSpeed) + "/s"
                 val downSpeed = NetworkUtils.formatBytes(state.downloadSpeed) + "/s"
                 val text = "↑ $upSpeed  ↓ $downSpeed"
-                val notification = buildNotification(text)
+                val notification = buildNotification(contentText = text, connected = true)
                 val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
                 nm.notify(NOTIFICATION_ID, notification)
             }
@@ -386,7 +526,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             delay(backoffMs)
 
             if (userRequestedStop) return@launch
-            startVpn(config)
+            startVpn(config, if (lastNodeId > 0L) lastNodeId else null)
         }
     }
 }

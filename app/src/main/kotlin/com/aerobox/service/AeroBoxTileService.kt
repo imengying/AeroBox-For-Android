@@ -1,13 +1,14 @@
 package com.aerobox.service
 
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
-import androidx.core.content.ContextCompat
 import com.aerobox.AeroBoxApplication
+import com.aerobox.R
 import com.aerobox.data.repository.VpnRepository
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.CoroutineScope
@@ -95,9 +96,8 @@ class AeroBoxTileService : TileService() {
                     return@launch
                 }
 
-                VpnStateManager.updateConnectionState(true, node)
-                vpnRepository.startVpn(config)
-                updateTile(true)
+                vpnRepository.startVpn(config, node.id)
+                updateTileState()
             }.onFailure { e ->
                 Log.e(TAG, "Failed to start VPN from tile", e)
                 VpnStateManager.updateConnectionState(false, null)
@@ -112,8 +112,21 @@ class AeroBoxTileService : TileService() {
     private fun updateTile(active: Boolean) {
         val tile = qsTile ?: return
         tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_aerobox)
+        tile.label = if (active) {
+            VpnStateManager.vpnState.value.currentNode
+                ?.name
+                ?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.tile_label)
+        } else {
+            getString(R.string.tile_label)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = if (active) "已连接" else "未连接"
+            tile.subtitle = if (active) {
+                getString(R.string.tile_action_close)
+            } else {
+                getString(R.string.tile_action_open)
+            }
         }
         tile.updateTile()
     }
