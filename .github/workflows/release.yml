@@ -16,6 +16,7 @@ jobs:
       SING_BOX_VERSION: v1.13.0
       ANDROID_NDK_VERSION: 28.2.13676358
       LIBBOX_BUILD_TAGS: with_conntrack,with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api
+      GOMOBILE_TOOLCHAIN: go1.22.12
 
     steps:
       - name: Checkout
@@ -33,6 +34,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+          cache: false
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -54,8 +56,10 @@ jobs:
           export ANDROID_NDK_HOME="${AEROBOX_ANDROID_NDK}"
           export ANDROID_NDK_ROOT="${AEROBOX_ANDROID_NDK}"
           export NDK="${AEROBOX_ANDROID_NDK}"
-          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
-          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
+          go version
+          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go version
+          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
+          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
           export PATH="$(go env GOPATH)/bin:${PATH}"
           gomobile init
 
