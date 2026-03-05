@@ -9,8 +9,10 @@ import com.aerobox.core.native.SingBoxNative
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.service.AeroBoxVpnService
 import com.aerobox.utils.PreferenceManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 class VpnRepository(private val context: Context) {
     val isRunning: StateFlow<Boolean> = AeroBoxVpnService.isRunning
@@ -41,6 +43,10 @@ class VpnRepository(private val context: Context) {
      * reading all user preferences (routing, DNS, IPv6, geo paths, etc.).
      */
     suspend fun buildConfig(node: ProxyNode): String {
+        withContext(Dispatchers.IO) {
+            GeoAssetManager.ensureBundledAssets(context)
+        }
+
         val routingMode = PreferenceManager.routingModeFlow(context).first()
         val remoteDns = PreferenceManager.remoteDnsFlow(context).first()
         val localDns = PreferenceManager.localDnsFlow(context).first()
@@ -48,6 +54,15 @@ class VpnRepository(private val context: Context) {
         val enableSocksInbound = PreferenceManager.enableSocksInboundFlow(context).first()
         val enableHttpInbound = PreferenceManager.enableHttpInboundFlow(context).first()
         val enableIPv6 = PreferenceManager.enableIPv6Flow(context).first()
+
+        val geoIpPath = GeoAssetManager
+            .getGeoIpFile(context)
+            .takeIf { it.exists() }
+            ?.absolutePath
+        val geoSitePath = GeoAssetManager
+            .getGeoSiteFile(context)
+            .takeIf { it.exists() }
+            ?.absolutePath
 
         return ConfigGenerator.generateSingBoxConfig(
             node = node,
@@ -58,8 +73,8 @@ class VpnRepository(private val context: Context) {
             enableSocksInbound = enableSocksInbound,
             enableHttpInbound = enableHttpInbound,
             enableIPv6 = enableIPv6,
-            geoipPath = GeoAssetManager.getGeoIpFile(context).absolutePath,
-            geositePath = GeoAssetManager.getGeoSiteFile(context).absolutePath
+            geoipPath = geoIpPath,
+            geositePath = geoSitePath
         )
     }
 }

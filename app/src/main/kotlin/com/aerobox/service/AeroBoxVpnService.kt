@@ -242,7 +242,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         if (prepare(this) != null) error("android: missing vpn permission")
 
         val builder = Builder()
-            .setSession("AeroBox VPN")
+            .setSession("AeroBox")
             .setMtu(options.mtu)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -332,7 +332,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         return NotificationCompat.Builder(this, AeroBoxApplication.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_flight)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)

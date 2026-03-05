@@ -169,6 +169,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             runCatching {
+                val autoUpdateSubscription = PreferenceManager
+                    .autoUpdateSubscriptionFlow(appContext)
+                    .first()
+                if (autoUpdateSubscription) {
+                    val subscriptions = subscriptionRepository.getAllSubscriptions().first()
+                    subscriptionRepository.refreshDueSubscriptions(subscriptions)
+                }
+
                 val config = vpnRepository.buildConfig(node)
                 val configError = vpnRepository.checkConfig(config)
                 if (configError != null) {
@@ -179,7 +187,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 vpnRepository.startVpn(config)
             }.onFailure {
                 VpnStateManager.updateConnectionState(false, null)
-                context.showToast(context.getString(com.aerobox.R.string.operation_failed))
+                val details = it.message?.takeIf { msg -> msg.isNotBlank() }
+                if (details != null) {
+                    context.showToast("${context.getString(com.aerobox.R.string.operation_failed)}: $details")
+                } else {
+                    context.showToast(context.getString(com.aerobox.R.string.operation_failed))
+                }
             }
         }
     }

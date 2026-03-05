@@ -35,10 +35,18 @@ class SubscriptionRepository(context: Context) {
     suspend fun getNodesBySubscriptionOnce(subscriptionId: Long): List<ProxyNode> =
         proxyNodeDao.getNodesBySubscriptionOnce(subscriptionId)
 
-    suspend fun addSubscription(name: String, url: String): Long {
+    suspend fun addSubscription(
+        name: String,
+        url: String,
+        autoUpdate: Boolean = false,
+        updateInterval: Long = DEFAULT_UPDATE_INTERVAL_MS
+    ): Long {
+        val normalizedInterval = normalizeUpdateInterval(updateInterval)
         val subscription = Subscription(
             name = name,
             url = url,
+            autoUpdate = autoUpdate,
+            updateInterval = normalizedInterval,
             createdAt = System.currentTimeMillis()
         )
         val subscriptionId = subscriptionDao.insert(subscription)
@@ -91,6 +99,16 @@ class SubscriptionRepository(context: Context) {
         }
     }
 
+    suspend fun refreshDueSubscriptions(
+        subscriptions: List<Subscription>,
+        now: Long = System.currentTimeMillis()
+    ) {
+        subscriptions.forEach { subscription ->
+            if (!shouldAutoUpdate(subscription, now)) return@forEach
+            runCatching { updateSubscription(subscription) }
+        }
+    }
+
     suspend fun updateNodeLatency(nodeId: Long, latency: Int) {
         proxyNodeDao.updateLatency(nodeId, latency)
     }
@@ -120,4 +138,20 @@ class SubscriptionRepository(context: Context) {
                 }
             })
         }
+
+    private fun shouldAutoUpdate(subscription: Subscription, now: Long): Boolean {
+        if (!subscription.autoUpdate) return false
+        val interval = normalizeUpdateInterval(subscription.updateInterval)
+        if (subscription.updateTime <= 0L) return true
+        return now - subscription.updateTime >= interval
+    }
+
+    private fun normalizeUpdateInterval(interval: Long): Long {
+        return interval.coerceAtLeast(MIN_UPDATE_INTERVAL_MS)
+    }
+
+    companion object {
+        const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
+        const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    }
 }

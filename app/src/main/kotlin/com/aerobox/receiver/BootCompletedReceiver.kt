@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.aerobox.AeroBoxApplication
+import com.aerobox.data.repository.SubscriptionRepository
 import com.aerobox.data.repository.VpnRepository
 import com.aerobox.service.AeroBoxVpnService
 import com.aerobox.service.VpnStateManager
@@ -25,6 +26,13 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 if (!autoConnect) return@runCatching
                 if (android.net.VpnService.prepare(context) != null) return@runCatching
 
+                val autoUpdateSubscription = PreferenceManager.autoUpdateSubscriptionFlow(context).first()
+                if (autoUpdateSubscription) {
+                    val subscriptionRepository = SubscriptionRepository(context)
+                    val subscriptions = subscriptionRepository.getAllSubscriptions().first()
+                    subscriptionRepository.refreshDueSubscriptions(subscriptions)
+                }
+
                 val nodeId = PreferenceManager.lastSelectedNodeIdFlow(context).first()
                 if (nodeId <= 0L) return@runCatching
 
@@ -44,4 +52,3 @@ class BootCompletedReceiver : BroadcastReceiver() {
         }
     }
 }
-

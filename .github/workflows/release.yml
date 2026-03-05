@@ -15,6 +15,7 @@ jobs:
     env:
       SING_BOX_VERSION: v1.13.0
       ANDROID_NDK_VERSION: 28.2.13676358
+      LIBBOX_BUILD_TAGS: with_conntrack,with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api
 
     steps:
       - name: Checkout
@@ -53,13 +54,41 @@ jobs:
           export ANDROID_NDK_HOME="${AEROBOX_ANDROID_NDK}"
           export ANDROID_NDK_ROOT="${AEROBOX_ANDROID_NDK}"
           export NDK="${AEROBOX_ANDROID_NDK}"
-          go install github.com/sagernet/gomobile/cmd/gomobile@latest
-          go install github.com/sagernet/gomobile/cmd/gobind@latest
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
           export PATH="$(go env GOPATH)/bin:${PATH}"
           gomobile init
 
           git clone --depth 1 --branch "${SING_BOX_VERSION}" https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
           pushd "${RUNNER_TEMP}/sing-box"
+
+          # Align libbox feature set with Neko-style aggressive profile to reduce .so size.
+          BUILD_LIBBOX_MAIN="cmd/internal/build_libbox/main.go"
+          if [ ! -f "${BUILD_LIBBOX_MAIN}" ]; then
+            echo "Cannot find ${BUILD_LIBBOX_MAIN}" >&2
+            exit 1
+          fi
+          python3 - "${BUILD_LIBBOX_MAIN}" "${LIBBOX_BUILD_TAGS}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+tags = [tag.strip() for tag in sys.argv[2].split(",") if tag.strip()]
+source = path.read_text(encoding="utf-8")
+replacement = "sharedTags = append(sharedTags, " + ", ".join(f'"{tag}"' for tag in tags) + ")"
+patched, count = re.subn(
+    r"sharedTags\s*=\s*append\(\s*sharedTags\s*,\s*[^)]*\)",
+    replacement,
+    source,
+    count=1,
+)
+if count != 1:
+    raise SystemExit(f"Failed to patch sharedTags in {path}")
+path.write_text(patched, encoding="utf-8")
+print(replacement)
+PY
+          grep -n "sharedTags = append" "${BUILD_LIBBOX_MAIN}" | head -n 1
 
           # Strip debug symbols from Go binary to reduce .so size by ~20-30%
           export CGO_LDFLAGS="-s -w"
@@ -78,6 +107,11 @@ jobs:
           mkdir -p "${STRIP_DIR}"
           unzip -q "${AAR_PATH}" -d "${STRIP_DIR}"
           find "${STRIP_DIR}/jni" -name '*.so' -exec "${AEROBOX_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded {} \;
+          echo "--- libbox native sizes after strip ---"
+          find "${STRIP_DIR}/jni" -name '*.so' -print0 | while IFS= read -r -d '' so; do
+            size_kb="$(du -k "${so}" | cut -f1)"
+            echo "${size_kb} KB  ${so#${STRIP_DIR}/}"
+          done | sort -n
           pushd "${STRIP_DIR}"
           zip -q -r "${GITHUB_WORKSPACE}/app/libs/libbox.aar" .
           popd
@@ -127,6 +161,37 @@ jobs:
           echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
           echo "AEROBOX_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
 
+      - name: Prepare bundled GeoIP/GeoSite assets
+        run: |
+          set -euo pipefail
+          ASSET_DIR="${GITHUB_WORKSPACE}/app/src/main/assets/sing-box"
+          rm -rf "${ASSET_DIR}"
+          mkdir -p "${ASSET_DIR}"
+
+          get_latest_release() {
+            curl --silent "https://api.github.com/repos/$1/releases/latest" \
+              | grep '"tag_name":' \
+              | sed -E 's/.*"([^"]+)".*/\1/'
+          }
+
+          GEOIP_TAG="$(get_latest_release "SagerNet/sing-geoip")"
+          GEOSITE_TAG="$(get_latest_release "SagerNet/sing-geosite")"
+          if [ -z "${GEOIP_TAG}" ] || [ -z "${GEOSITE_TAG}" ]; then
+            echo "Failed to resolve geo asset versions." >&2
+            exit 1
+          fi
+
+          echo -n "${GEOIP_TAG}" > "${ASSET_DIR}/geoip.version.txt"
+          echo -n "${GEOSITE_TAG}" > "${ASSET_DIR}/geosite.version.txt"
+
+          curl -fLSs "https://github.com/SagerNet/sing-geoip/releases/download/${GEOIP_TAG}/geoip.db" -o "${ASSET_DIR}/geoip.db"
+          curl -fLSs "https://github.com/SagerNet/sing-geosite/releases/download/${GEOSITE_TAG}/geosite.db" -o "${ASSET_DIR}/geosite.db"
+          xz -z -9 -f "${ASSET_DIR}/geoip.db"
+          xz -z -9 -f "${ASSET_DIR}/geosite.db"
+
+          echo "Bundled geo assets:"
+          ls -lh "${ASSET_DIR}"
+
       - name: Switch to JDK 21 (Android build)
         uses: actions/setup-java@v4
         with:
@@ -157,6 +222,36 @@ jobs:
             )
           fi
           gradle --stacktrace :app:assembleRelease "${EXTRA_ARGS[@]}" 2>&1 | tee "${RUNNER_TEMP}/gradle-build.log"
+
+      - name: Rename APKs (NekoBox style)
+        env:
+          AEROBOX_VERSION_NAME: ${{ env.AEROBOX_VERSION_NAME }}
+        run: |
+          set -euo pipefail
+          SRC_DIR="${GITHUB_WORKSPACE}/app/build/outputs/apk/release"
+          DIST_DIR="${SRC_DIR}/dist"
+          mkdir -p "${DIST_DIR}"
+          shopt -s nullglob
+          APKS=("${SRC_DIR}"/*.apk)
+          if [ "${#APKS[@]}" -eq 0 ]; then
+            echo "No APK files found in ${SRC_DIR}" >&2
+            exit 1
+          fi
+
+          for apk in "${APKS[@]}"; do
+            filename="$(basename "${apk}")"
+            abi="universal"
+            case "${filename}" in
+              *arm64-v8a*) abi="arm64-v8a" ;;
+              *armeabi-v7a*) abi="armeabi-v7a" ;;
+              *x86_64*) abi="x86_64" ;;
+              *x86*) abi="x86" ;;
+            esac
+            cp -f "${apk}" "${DIST_DIR}/AeroBox-${AEROBOX_VERSION_NAME}-${abi}.apk"
+          done
+
+          echo "Renamed APK outputs:"
+          ls -la "${DIST_DIR}"
 
       - name: Debug logs and directory tree on failure
         if: failure()
@@ -196,9 +291,9 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aerobox-release-${{ github.ref_name || github.run_number }}
+          name: aerobox-release-${{ env.AEROBOX_VERSION_NAME || github.ref_name || github.run_number }}
           path: |
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/dist/*.apk
             app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
 
@@ -206,7 +301,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: AeroBox For Android ${{ github.ref_name }}
+          name: AeroBox-${{ env.AEROBOX_VERSION_NAME }}
           generate_release_notes: true
           files: |
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/dist/*.apk

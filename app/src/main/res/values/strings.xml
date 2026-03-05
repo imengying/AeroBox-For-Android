@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AeroBox For Android</string>
+    <string name="app_name">AeroBox</string>
     <string name="home">主页</string>
     <string name="profiles">配置</string>
     <string name="settings">设置</string>
@@ -52,6 +52,12 @@
     <string name="test_result_prefix">延迟</string>
     <string name="android_12_plus">仅 Android 12+</string>
     <string name="subscription_management">订阅管理</string>
+    <string name="subscription_auto_update">启用自动更新</string>
+    <string name="subscription_update_interval_minutes">自动更新间隔（分钟）</string>
+    <string name="subscription_update_interval_hint">最小 15 分钟，建议 60 或 1440</string>
+    <string name="subscription_auto_update_invalid_interval">间隔至少为 15 分钟</string>
+    <string name="subscription_auto_update_status">自动更新：每 %1$s</string>
+    <string name="subscription_manual_update_status">手动更新</string>
     <string name="select_node">选择节点</string>
     <string name="node_list">节点列表</string>
     <string name="test_all">全部测速</string>

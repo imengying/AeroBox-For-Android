@@ -101,6 +101,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.tukaani:xz:1.9")
 
     implementation(files("libs/libbox.aar"))
 

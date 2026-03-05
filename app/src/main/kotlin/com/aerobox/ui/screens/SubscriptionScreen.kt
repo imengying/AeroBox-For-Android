@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,6 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -149,8 +153,13 @@ fun SubscriptionScreen(
     if (showAddDialog) {
         AddSubscriptionDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, url ->
-                viewModel.addSubscription(name, url)
+            onConfirm = { name, url, autoUpdate, updateInterval ->
+                viewModel.addSubscription(
+                    name = name,
+                    url = url,
+                    autoUpdate = autoUpdate,
+                    updateInterval = updateInterval
+                )
                 showAddDialog = false
             }
         )
@@ -233,6 +242,19 @@ private fun SubscriptionItem(
                         )
                     }
                 }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (subscription.autoUpdate) {
+                        stringResource(
+                            R.string.subscription_auto_update_status,
+                            formatInterval(subscription.updateInterval)
+                        )
+                    } else {
+                        stringResource(R.string.subscription_manual_update_status)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
 
             Spacer(Modifier.width(8.dp))
@@ -258,10 +280,15 @@ private fun SubscriptionItem(
 @Composable
 private fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
-    onConfirm: (name: String, url: String) -> Unit
+    onConfirm: (name: String, url: String, autoUpdate: Boolean, updateInterval: Long) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var autoUpdate by remember { mutableStateOf(true) }
+    var updateIntervalMinutes by remember { mutableStateOf(DEFAULT_INTERVAL_MINUTES.toString()) }
+
+    val intervalMinutes = updateIntervalMinutes.toLongOrNull()
+    val intervalValid = !autoUpdate || (intervalMinutes != null && intervalMinutes >= MIN_INTERVAL_MINUTES)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -283,12 +310,62 @@ private fun AddSubscriptionDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.subscription_auto_update),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Switch(
+                        checked = autoUpdate,
+                        onCheckedChange = { autoUpdate = it }
+                    )
+                }
+                if (autoUpdate) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = updateIntervalMinutes,
+                        onValueChange = { input ->
+                            updateIntervalMinutes = input.filter { it.isDigit() }
+                        },
+                        label = { Text(stringResource(R.string.subscription_update_interval_minutes)) },
+                        supportingText = {
+                            Text(
+                                text = if (intervalValid) {
+                                    stringResource(R.string.subscription_update_interval_hint)
+                                } else {
+                                    stringResource(R.string.subscription_auto_update_invalid_interval)
+                                }
+                            )
+                        },
+                        isError = !intervalValid,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), url.trim()) },
-                enabled = name.isNotBlank() && url.isNotBlank()
+                onClick = {
+                    val minutes = if (autoUpdate) {
+                        (intervalMinutes ?: DEFAULT_INTERVAL_MINUTES).coerceAtLeast(MIN_INTERVAL_MINUTES)
+                    } else {
+                        DEFAULT_INTERVAL_MINUTES
+                    }
+                    onConfirm(
+                        name.trim(),
+                        url.trim(),
+                        autoUpdate,
+                        minutes * 60_000L
+                    )
+                },
+                enabled = name.isNotBlank() && url.isNotBlank() && intervalValid
             ) {
                 Text(stringResource(R.string.confirm))
             }
@@ -304,3 +381,15 @@ private fun AddSubscriptionDialog(
 private fun formatTime(timestamp: Long): String {
     return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
 }
+
+private fun formatInterval(intervalMs: Long): String {
+    val minutes = (intervalMs / 60_000L).coerceAtLeast(1L)
+    return when {
+        minutes % (24L * 60L) == 0L -> "${minutes / (24L * 60L)} 天"
+        minutes % 60L == 0L -> "${minutes / 60L} 小时"
+        else -> "$minutes 分钟"
+    }
+}
+
+private const val MIN_INTERVAL_MINUTES = 15L
+private const val DEFAULT_INTERVAL_MINUTES = 24L * 60L

@@ -40,11 +40,21 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         _selectedSubscriptionId.value = subscription.id
     }
 
-    fun addSubscription(name: String, url: String) {
+    fun addSubscription(
+        name: String,
+        url: String,
+        autoUpdate: Boolean,
+        updateInterval: Long
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             runCatching {
-                repository.addSubscription(name, url)
+                repository.addSubscription(
+                    name = name,
+                    url = url,
+                    autoUpdate = autoUpdate,
+                    updateInterval = updateInterval
+                )
             }
             _isLoading.value = false
         }

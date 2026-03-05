@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,14 +69,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+        contentPadding = PaddingValues(top = 64.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             ConnectionCard(
                 isConnected = vpnState.isConnected,
                 nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
-                nodeAddress = selectedNode?.let { "${it.server}:${it.port}" } ?: "--",
+                nodeAddress = selectedNode?.type?.name ?: "--",
                 connectionDuration = connectionDuration,
                 onToggleConnection = {
                     val permissionIntent = viewModel.toggleConnection(context)
@@ -83,7 +84,12 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         permissionLauncher.launch(permissionIntent)
                     }
                 },
-                onNodeNameClick = { showNodeList = true }
+                onNodeNameClick = { showNodeList = true },
+                onTestNetwork = { 
+                    if (selectedNode != null) {
+                        viewModel.testSingleNodeLatency(selectedNode!!) 
+                    }
+                }
             )
         }
 

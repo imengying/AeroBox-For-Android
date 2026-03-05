@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.os.Build
 import androidx.room.Room
 import com.aerobox.data.database.AppDatabase
+import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.core.native.SingBoxNative
 
 class AeroBoxApplication : Application() {
@@ -20,6 +21,10 @@ class AeroBoxApplication : Application() {
         database
         createNotificationChannel()
         SingBoxNative.setup(this)
+
+        Thread {
+            GeoAssetManager.ensureBundledAssets(this)
+        }.start()
     }
 
     private fun createNotificationChannel() {
@@ -27,7 +32,7 @@ class AeroBoxApplication : Application() {
 
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            "AeroBox VPN",
+            "AeroBox",
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -53,4 +58,3 @@ class AeroBoxApplication : Application() {
         }
     }
 }
-

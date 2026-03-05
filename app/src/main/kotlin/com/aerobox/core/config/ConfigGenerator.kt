@@ -21,6 +21,7 @@ object ConfigGenerator {
         geositePath: String? = null
     ): String {
         val config = JSONObject()
+        val hasGeoSite = !geositePath.isNullOrBlank()
 
         config.put(
             "log",
@@ -29,7 +30,7 @@ object ConfigGenerator {
                 .put("timestamp", true)
         )
 
-        config.put("dns", buildDns(remoteDns, localDns, enableDoh, routingMode))
+        config.put("dns", buildDns(remoteDns, localDns, enableDoh, routingMode, hasGeoSite))
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
 
         val proxyOutbound = buildProxyOutbound(node).put("tag", "proxy")
@@ -53,7 +54,8 @@ object ConfigGenerator {
         remoteDns: String,
         localDns: String,
         enableDoh: Boolean,
-        routingMode: RoutingMode
+        routingMode: RoutingMode,
+        hasGeoSite: Boolean
     ): JSONObject {
         val remoteAddress = if (enableDoh && !remoteDns.startsWith("tls://") && !remoteDns.startsWith("https://")) {
             "tls://$remoteDns"
@@ -77,7 +79,7 @@ object ConfigGenerator {
         val dns = JSONObject().put("servers", servers)
 
         // Only add DNS routing rules for rule-based modes
-        if (routingMode == RoutingMode.RULE_BASED) {
+        if (routingMode == RoutingMode.RULE_BASED && hasGeoSite) {
             dns.put(
                 "rules",
                 JSONArray().put(
@@ -160,6 +162,9 @@ object ConfigGenerator {
             route.put("geosite", JSONObject().put("path", geositePath))
         }
 
+        val hasGeoIp = !geoipPath.isNullOrBlank()
+        val hasGeoSite = !geositePath.isNullOrBlank()
+
         when (routingMode) {
             RoutingMode.GLOBAL_PROXY -> {
                 route.put("final", "proxy")
@@ -175,25 +180,33 @@ object ConfigGenerator {
 
             RoutingMode.RULE_BASED -> {
                 route.put("final", "proxy")
+                val rules = JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("protocol", "dns")
+                            .put("outbound", "dns-out")
+                    )
+
+                if (hasGeoSite && hasGeoIp) {
+                    rules.put(
+                        JSONObject()
+                            .put("geosite", JSONArray().put("cn"))
+                            .put("geoip", JSONArray().put("cn"))
+                            .put("outbound", "direct")
+                    )
+                }
+
+                if (hasGeoSite) {
+                    rules.put(
+                        JSONObject()
+                            .put("geosite", JSONArray().put("category-ads-all"))
+                            .put("outbound", "block")
+                    )
+                }
+
                 route.put(
                     "rules",
-                    JSONArray()
-                        .put(
-                            JSONObject()
-                                .put("protocol", "dns")
-                                .put("outbound", "dns-out")
-                        )
-                        .put(
-                            JSONObject()
-                                .put("geosite", JSONArray().put("cn"))
-                                .put("geoip", JSONArray().put("cn"))
-                                .put("outbound", "direct")
-                        )
-                        .put(
-                            JSONObject()
-                                .put("geosite", JSONArray().put("category-ads-all"))
-                                .put("outbound", "block")
-                        )
+                    rules
                 )
             }
 
