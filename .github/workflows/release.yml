@@ -24,6 +24,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Static sanity checks (Kotlin/XML)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path("app/src/main")
+          errors = []
+
+          for p in root.rglob("*"):
+              if not p.is_file():
+                  continue
+              text = p.read_text(encoding="utf-8", errors="ignore")
+              path = str(p)
+
+              if path.endswith(".kt"):
+                  if "import androidx.compose.foundation.layout.weight" in text:
+                      errors.append((path, "Do not import internal Compose weight symbol; remove this import."))
+                  if "import androidx.compose.ui.text.input.KeyboardOptions" in text:
+                      errors.append((path, "Use androidx.compose.foundation.text.KeyboardOptions instead."))
+                  if text.count("/*") != text.count("*/"):
+                      errors.append((path, "Unbalanced block comment delimiters (/* and */)."))
+
+              if path.endswith(".xml"):
+                  if "colorControlNormal" in text:
+                      errors.append((path, "Avoid ?attr/colorControlNormal; resource may be missing in this project."))
+
+          if errors:
+              print("Static sanity checks failed:")
+              for path, msg in errors:
+                  print(f"- {path}: {msg}")
+              sys.exit(1)
+
+          print("Static sanity checks passed.")
+          PY
+
       - name: Set up JDK 17 (libbox)
         uses: actions/setup-java@v4
         with:
