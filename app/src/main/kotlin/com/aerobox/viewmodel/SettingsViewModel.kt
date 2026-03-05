@@ -62,6 +62,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val autoReconnect: StateFlow<Boolean> = PreferenceManager.autoReconnectFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
+    val enableGeoRules: StateFlow<Boolean> = PreferenceManager.enableGeoRulesFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val enableGeoCnDirect: StateFlow<Boolean> = PreferenceManager.enableGeoCnDirectFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val enableGeoAdsBlock: StateFlow<Boolean> = PreferenceManager.enableGeoAdsBlockFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     suspend fun setDarkMode(mode: String) {
         PreferenceManager.setDarkMode(appContext, mode)
     }
@@ -125,5 +134,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     suspend fun setAutoReconnect(enabled: Boolean) {
         PreferenceManager.setAutoReconnect(appContext, enabled)
+    }
+
+    suspend fun setEnableGeoRules(enabled: Boolean) {
+        PreferenceManager.setEnableGeoRules(appContext, enabled)
+    }
+
+    suspend fun setEnableGeoCnDirect(enabled: Boolean) {
+        PreferenceManager.setEnableGeoCnDirect(appContext, enabled)
+    }
+
+    suspend fun setEnableGeoAdsBlock(enabled: Boolean) {
+        PreferenceManager.setEnableGeoAdsBlock(appContext, enabled)
     }
 }

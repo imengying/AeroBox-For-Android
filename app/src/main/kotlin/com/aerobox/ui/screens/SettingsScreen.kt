@@ -2,8 +2,6 @@ package com.aerobox.ui.screens
 
 import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,7 +17,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import com.aerobox.ui.icons.AppIcons
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -48,14 +45,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aerobox.AeroBoxApplication
 import com.aerobox.R
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.data.model.RoutingMode
-import com.aerobox.utils.ImportExportUtils
 import com.aerobox.viewmodel.SettingsViewModel
-import android.content.Intent
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,30 +73,15 @@ fun SettingsScreen(
     val enableHttpInbound by viewModel.enableHttpInbound.collectAsStateWithLifecycle()
     val enableIPv6 by viewModel.enableIPv6.collectAsStateWithLifecycle()
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
+    val enableGeoRules by viewModel.enableGeoRules.collectAsStateWithLifecycle()
+    val enableGeoCnDirect by viewModel.enableGeoCnDirect.collectAsStateWithLifecycle()
+    val enableGeoAdsBlock by viewModel.enableGeoAdsBlock.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var showDnsDialog by remember { mutableStateOf(false) }
     var showRoutingDialog by remember { mutableStateOf(false) }
     var geoUpdating by remember { mutableStateOf(false) }
     val context = LocalContext.current
-
-    // SAF file picker for import
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val nodes = ImportExportUtils.importFromFile(context, uri)
-                if (nodes.isNotEmpty()) {
-                    val db = AeroBoxApplication.database
-                    db.proxyNodeDao().insertAll(nodes)
-                    Toast.makeText(context, "导入 ${nodes.size} 个节点", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "未找到可导入的节点", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -171,63 +149,53 @@ fun SettingsScreen(
             }
         }
 
-        // ── Import/Export ──
-        item { SectionHeader(title = "导入 / 导出") }
-        item {
-            SettingItem(
-                modifier = Modifier.clickable {
-                    scope.launch {
-                        val nodes = ImportExportUtils.importFromClipboard(context)
-                        if (nodes.isNotEmpty()) {
-                            val db = AeroBoxApplication.database
-                            db.proxyNodeDao().insertAll(nodes)
-                            Toast.makeText(context, "从剪贴板导入 ${nodes.size} 个节点", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "剪贴板中未找到可导入的节点", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                icon = { Icon(AppIcons.Speed, contentDescription = null) },
-                title = "从剪贴板导入",
-                supporting = "导入 URI / JSON / Clash YAML 格式节点",
-                trailing = {}
-            )
-        }
-        item {
-            SettingItem(
-                modifier = Modifier.clickable { filePickerLauncher.launch("*/*") },
-                icon = { Icon(AppIcons.Speed, contentDescription = null) },
-                title = "从文件导入",
-                supporting = "选择本地配置文件导入",
-                trailing = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
-            )
-        }
-        item {
-            SettingItem(
-                modifier = Modifier.clickable {
-                    scope.launch {
-                        val db = AeroBoxApplication.database
-                        val allNodes = db.proxyNodeDao().getAllNodes()
-                        val nodes = allNodes.first()
-                        if (nodes.isNotEmpty()) {
-                            val uris = nodes.mapNotNull { ImportExportUtils.exportNodeAsUri(it) }
-                                .joinToString("\n")
-                            val intent = ImportExportUtils.createShareIntent(uris)
-                            context.startActivity(Intent.createChooser(intent, "分享节点"))
-                        } else {
-                            Toast.makeText(context, "暂无节点可导出", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                icon = { Icon(Icons.Filled.Share, contentDescription = null) },
-                title = "导出并分享",
-                supporting = "将所有节点以 URI 格式分享",
-                trailing = {}
-            )
-        }
-
         // ── Geo Assets ──
         item { SectionHeader(title = "GeoIP / GeoSite 资源") }
+        item {
+            SettingItem(
+                icon = { Icon(AppIcons.Security, contentDescription = null) },
+                title = "启用 Geo 规则分流",
+                supporting = if (enableGeoRules) {
+                    "已启用（需要本地 GeoIP/GeoSite 数据库）"
+                } else {
+                    "默认关闭，兼容性更高"
+                },
+                trailing = {
+                    Switch(
+                        checked = enableGeoRules,
+                        onCheckedChange = { scope.launch { viewModel.setEnableGeoRules(it) } }
+                    )
+                }
+            )
+        }
+        item {
+            SettingItem(
+                icon = { Icon(AppIcons.Security, contentDescription = null) },
+                title = "中国流量直连（Geo）",
+                supporting = "geosite:cn + geoip:cn",
+                trailing = {
+                    Switch(
+                        checked = enableGeoCnDirect,
+                        onCheckedChange = { scope.launch { viewModel.setEnableGeoCnDirect(it) } },
+                        enabled = enableGeoRules
+                    )
+                }
+            )
+        }
+        item {
+            SettingItem(
+                icon = { Icon(AppIcons.Security, contentDescription = null) },
+                title = "广告拦截（Geo）",
+                supporting = "geosite:category-ads-all",
+                trailing = {
+                    Switch(
+                        checked = enableGeoAdsBlock,
+                        onCheckedChange = { scope.launch { viewModel.setEnableGeoAdsBlock(it) } },
+                        enabled = enableGeoRules
+                    )
+                }
+            )
+        }
         item {
             val hasFiles = GeoAssetManager.hasLocalFiles(context)
             val geoIpSize = GeoAssetManager.getGeoIpSize(context)
@@ -249,7 +217,11 @@ fun SettingsScreen(
                 },
                 icon = { Icon(AppIcons.Security, contentDescription = null) },
                 title = if (hasFiles) "更新规则数据库" else "下载规则数据库",
-                supporting = if (hasFiles) "GeoIP: $geoIpSize · GeoSite: $geoSiteSize" else "规则分流需要此资源",
+                supporting = if (hasFiles) {
+                    "GeoIP: $geoIpSize · GeoSite: $geoSiteSize（官方源 SagerNet）"
+                } else {
+                    "规则分流需要此资源（仅官方源 SagerNet）"
+                },
                 trailing = {
                     if (geoUpdating) {
                         CircularProgressIndicator(

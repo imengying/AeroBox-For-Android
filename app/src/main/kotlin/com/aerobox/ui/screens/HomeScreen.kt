@@ -13,13 +13,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,6 +49,7 @@ import com.aerobox.ui.components.ConnectionCard
 import com.aerobox.ui.components.NodeListSheet
 import com.aerobox.ui.components.TrafficStatsCard
 import com.aerobox.utils.showToast
+import com.aerobox.viewmodel.ConnectionFixAction
 import com.aerobox.viewmodel.HomeViewModel
 
 @Composable
@@ -52,6 +61,8 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val connectionDuration by viewModel.connectionDuration.collectAsStateWithLifecycle()
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
     val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
+    val detectedIp by viewModel.detectedIp.collectAsStateWithLifecycle()
+    val connectionIssue by viewModel.connectionIssue.collectAsStateWithLifecycle()
     var showNodeList by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -84,11 +95,19 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     }
                 },
                 onNodeNameClick = { showNodeList = true },
-                onTestNetwork = { 
+                onTestNetwork = {
                     if (selectedNode != null) {
-                        viewModel.testSingleNodeLatency(selectedNode!!) 
+                        viewModel.testSingleNodeLatency(selectedNode!!)
                     }
+                    viewModel.refreshNetworkInfo()
                 }
+            )
+        }
+
+        item {
+            NetworkDetectCard(
+                ip = detectedIp,
+                onClick = { viewModel.refreshNetworkInfo() }
             )
         }
 
@@ -129,6 +148,93 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             onTestAll = { viewModel.testAllNodesLatency() },
             onTestNode = { node -> viewModel.testSingleNodeLatency(node) },
             onDismiss = { showNodeList = false }
+        )
+    }
+
+    connectionIssue?.let { issue ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissConnectionIssue() },
+            title = { Text(issue.title) },
+            text = {
+                Text(
+                    buildString {
+                        append(issue.message)
+                        if (issue.rawError.isNotBlank()) {
+                            append("\n\n原始错误：")
+                            append(issue.rawError.take(220))
+                        }
+                    }
+                )
+            },
+            confirmButton = {
+                val action = issue.fixAction
+                if (action != null) {
+                    TextButton(
+                        onClick = { viewModel.applyConnectionFix(context, action) }
+                    ) {
+                        Text(action.label)
+                    }
+                } else {
+                    TextButton(onClick = { viewModel.dismissConnectionIssue() }) {
+                        Text("知道了")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissConnectionIssue() }) {
+                    Text(
+                        if (issue.fixAction == ConnectionFixAction.REFRESH_SUBSCRIPTIONS) {
+                            "稍后手动处理"
+                        } else {
+                            "取消"
+                        }
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun NetworkDetectCard(
+    ip: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "网络检测",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = ip,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
         )
     }
 }

@@ -131,7 +131,7 @@ fun PerAppProxyScreen(
                 FilterChip(
                     selected = showSystem,
                     onClick = { showSystem = !showSystem },
-                    label = { Text("系统应用") }
+                    label = { Text("显示系统") }
                 )
             }
 
@@ -142,50 +142,59 @@ fun PerAppProxyScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp)
-            ) {
-                items(filteredApps, key = { it.packageName }) { app ->
-                    val isChecked = selectedPackages.contains(app.packageName)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Image(
-                            painter = rememberDrawablePainter(app.icon),
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+            if (filteredApps.isEmpty()) {
+                Text(
+                    text = "未获取到应用列表，可尝试开启“显示系统”或重启应用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    items(filteredApps, key = { it.packageName }) { app ->
+                        val isChecked = selectedPackages.contains(app.packageName)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Image(
+                                painter = rememberDrawablePainter(app.icon),
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp)
                             )
-                            Text(
-                                text = app.packageName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = app.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    val updated = if (checked) {
+                                        selectedPackages + app.packageName
+                                    } else {
+                                        selectedPackages - app.packageName
+                                    }
+                                    scope.launch { viewModel.setPerAppProxyPackages(updated) }
+                                }
                             )
                         }
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = { checked ->
-                                val updated = if (checked) {
-                                    selectedPackages + app.packageName
-                                } else {
-                                    selectedPackages - app.packageName
-                                }
-                                scope.launch { viewModel.setPerAppProxyPackages(updated) }
-                            }
-                        )
                     }
                 }
             }

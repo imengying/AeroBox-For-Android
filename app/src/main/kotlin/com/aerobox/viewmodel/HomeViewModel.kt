@@ -7,7 +7,9 @@ import android.net.VpnService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aerobox.AeroBoxApplication
+import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.data.model.ProxyNode
+import com.aerobox.data.model.RoutingMode
 import com.aerobox.data.model.TrafficStats
 import com.aerobox.data.model.VpnState
 import com.aerobox.data.repository.SubscriptionRepository
@@ -17,6 +19,7 @@ import com.aerobox.utils.PreferenceManager
 import com.aerobox.utils.formatDuration
 import com.aerobox.utils.showToast
 import com.aerobox.utils.toTrafficStats
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,8 +33,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 
-import com.aerobox.data.model.RoutingMode
+enum class ConnectionFixAction(val label: String) {
+    UPDATE_GEO("更新 Geo 资源"),
+    SWITCH_GLOBAL_MODE("切换为全局模式"),
+    REFRESH_SUBSCRIPTIONS("重新拉取订阅")
+}
+
+data class ConnectionIssue(
+    val title: String,
+    val message: String,
+    val rawError: String,
+    val fixAction: ConnectionFixAction? = null
+)
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
@@ -69,12 +85,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionDuration = MutableStateFlow("00:00:00")
     val connectionDuration: StateFlow<String> = _connectionDuration.asStateFlow()
 
+    private val _detectedIp = MutableStateFlow("点击检测出口 IP")
+    val detectedIp: StateFlow<String> = _detectedIp.asStateFlow()
+
+    private val _connectionIssue = MutableStateFlow<ConnectionIssue?>(null)
+    val connectionIssue: StateFlow<ConnectionIssue?> = _connectionIssue.asStateFlow()
+
     private var statsJob: Job? = null
 
     init {
         observeSelectedNode()
         observeConnectionDuration()
         observeTrafficStats()
+        refreshNetworkInfo()
     }
 
     private fun observeSelectedNode() {
@@ -180,7 +203,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val config = vpnRepository.buildConfig(node)
                 val configError = vpnRepository.checkConfig(config)
                 if (configError != null) {
-                    context.showToast("${context.getString(com.aerobox.R.string.operation_failed)}: $configError")
+                    handleConnectionFailure(context, configError)
                     return@launch
                 }
                 VpnStateManager.updateConnectionState(true, node)
@@ -189,7 +212,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 VpnStateManager.updateConnectionState(false, null)
                 val details = it.message?.takeIf { msg -> msg.isNotBlank() }
                 if (details != null) {
-                    context.showToast("${context.getString(com.aerobox.R.string.operation_failed)}: $details")
+                    handleConnectionFailure(context, details)
                 } else {
                     context.showToast(context.getString(com.aerobox.R.string.operation_failed))
                 }
@@ -251,6 +274,111 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val latency = com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
             subscriptionRepository.updateNodeLatency(node.id, latency)
+        }
+    }
+
+    fun refreshNetworkInfo() {
+        viewModelScope.launch {
+            _detectedIp.value = fetchPublicIp()
+        }
+    }
+
+    fun dismissConnectionIssue() {
+        _connectionIssue.value = null
+    }
+
+    fun applyConnectionFix(context: Context, fixAction: ConnectionFixAction) {
+        viewModelScope.launch {
+            val fixSuccess = when (fixAction) {
+                ConnectionFixAction.UPDATE_GEO -> GeoAssetManager.updateAll(appContext)
+                ConnectionFixAction.SWITCH_GLOBAL_MODE -> {
+                    PreferenceManager.setRoutingMode(appContext, RoutingMode.GLOBAL_PROXY)
+                    true
+                }
+
+                ConnectionFixAction.REFRESH_SUBSCRIPTIONS -> {
+                    val subscriptions = subscriptionRepository.getAllSubscriptions().first()
+                    subscriptionRepository.refreshAllSubscriptions(subscriptions)
+                    true
+                }
+            }
+
+            if (fixSuccess) {
+                context.showToast("修复已完成，请重试连接")
+            } else {
+                context.showToast("修复失败，请检查网络后重试")
+            }
+            _connectionIssue.value = null
+        }
+    }
+
+    private suspend fun fetchPublicIp(): String = withContext(Dispatchers.IO) {
+        val endpoints = listOf(
+            "https://api.ipify.org",
+            "https://ifconfig.me/ip",
+            "https://ipv4.icanhazip.com"
+        )
+        for (endpoint in endpoints) {
+            val ip = runCatching {
+                URL(endpoint).openStream().bufferedReader().use { it.readText().trim() }
+            }.getOrNull()
+            if (!ip.isNullOrBlank()) {
+                return@withContext ip
+            }
+        }
+        "检测失败，点击重试"
+    }
+
+    private fun handleConnectionFailure(context: Context, rawError: String) {
+        val issue = classifyConnectionIssue(rawError)
+        _connectionIssue.value = issue
+        context.showToast("${context.getString(com.aerobox.R.string.operation_failed)}: ${issue.title}")
+    }
+
+    private fun classifyConnectionIssue(rawError: String): ConnectionIssue {
+        val msg = rawError.lowercase()
+
+        return when {
+            msg.contains("geosite") ||
+                    msg.contains("geoip") ||
+                    (msg.contains("router") && msg.contains("database")) -> {
+                ConnectionIssue(
+                    title = "Geo 规则资源异常",
+                    message = "检测到 GeoIP/GeoSite 数据库不可用或格式不兼容。",
+                    rawError = rawError,
+                    fixAction = ConnectionFixAction.UPDATE_GEO
+                )
+            }
+
+            msg.contains("rule") ||
+                    (msg.contains("router") && msg.contains("parse")) -> {
+                ConnectionIssue(
+                    title = "路由规则异常",
+                    message = "当前规则模式可能与节点配置不兼容，建议先切换到全局模式。",
+                    rawError = rawError,
+                    fixAction = ConnectionFixAction.SWITCH_GLOBAL_MODE
+                )
+            }
+
+            msg.contains("outbound") ||
+                    msg.contains("node") ||
+                    msg.contains("subscription") ||
+                    msg.contains("proxy") -> {
+                ConnectionIssue(
+                    title = "节点或订阅可能失效",
+                    message = "节点参数可能已过期，建议重新拉取订阅后再连接。",
+                    rawError = rawError,
+                    fixAction = ConnectionFixAction.REFRESH_SUBSCRIPTIONS
+                )
+            }
+
+            else -> {
+                ConnectionIssue(
+                    title = "连接配置异常",
+                    message = "请检查节点、DNS、分流设置，必要时更新订阅后重试。",
+                    rawError = rawError
+                )
+            }
         }
     }
 }

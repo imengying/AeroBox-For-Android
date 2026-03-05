@@ -17,11 +17,14 @@ object ConfigGenerator {
         enableSocksInbound: Boolean = false,
         enableHttpInbound: Boolean = false,
         enableIPv6: Boolean = true,
+        enableGeoCnDirect: Boolean = true,
+        enableGeoAdsBlock: Boolean = true,
         geoipPath: String? = null,
         geositePath: String? = null
     ): String {
         val config = JSONObject()
         val hasGeoSite = !geositePath.isNullOrBlank()
+        val hasGeoIp = !geoipPath.isNullOrBlank()
 
         config.put(
             "log",
@@ -30,7 +33,16 @@ object ConfigGenerator {
                 .put("timestamp", true)
         )
 
-        config.put("dns", buildDns(remoteDns, localDns, enableDoh, routingMode, hasGeoSite))
+        config.put(
+            "dns",
+            buildDns(
+                remoteDns = remoteDns,
+                localDns = localDns,
+                enableDoh = enableDoh,
+                routingMode = routingMode,
+                enableGeoCnDirect = enableGeoCnDirect && hasGeoSite
+            )
+        )
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
 
         val proxyOutbound = buildProxyOutbound(node).put("tag", "proxy")
@@ -43,7 +55,16 @@ object ConfigGenerator {
                 .put(JSONObject().put("type", "dns").put("tag", "dns-out"))
         )
 
-        config.put("route", buildRoute(routingMode, geoipPath, geositePath))
+        config.put(
+            "route",
+            buildRoute(
+                routingMode = routingMode,
+                geoipPath = geoipPath,
+                geositePath = geositePath,
+                enableGeoCnDirect = enableGeoCnDirect && hasGeoSite && hasGeoIp,
+                enableGeoAdsBlock = enableGeoAdsBlock && hasGeoSite
+            )
+        )
 
         return config.toString(2)
     }
@@ -55,7 +76,7 @@ object ConfigGenerator {
         localDns: String,
         enableDoh: Boolean,
         routingMode: RoutingMode,
-        hasGeoSite: Boolean
+        enableGeoCnDirect: Boolean
     ): JSONObject {
         val remoteAddress = if (enableDoh && !remoteDns.startsWith("tls://") && !remoteDns.startsWith("https://")) {
             "tls://$remoteDns"
@@ -79,7 +100,7 @@ object ConfigGenerator {
         val dns = JSONObject().put("servers", servers)
 
         // Only add DNS routing rules for rule-based modes
-        if (routingMode == RoutingMode.RULE_BASED && hasGeoSite) {
+        if (routingMode == RoutingMode.RULE_BASED && enableGeoCnDirect) {
             dns.put(
                 "rules",
                 JSONArray().put(
@@ -149,7 +170,9 @@ object ConfigGenerator {
     private fun buildRoute(
         routingMode: RoutingMode,
         geoipPath: String? = null,
-        geositePath: String? = null
+        geositePath: String? = null,
+        enableGeoCnDirect: Boolean = true,
+        enableGeoAdsBlock: Boolean = true
     ): JSONObject {
         val route = JSONObject()
             .put("auto_detect_interface", true)
@@ -161,9 +184,6 @@ object ConfigGenerator {
         if (!geositePath.isNullOrBlank()) {
             route.put("geosite", JSONObject().put("path", geositePath))
         }
-
-        val hasGeoIp = !geoipPath.isNullOrBlank()
-        val hasGeoSite = !geositePath.isNullOrBlank()
 
         when (routingMode) {
             RoutingMode.GLOBAL_PROXY -> {
@@ -187,7 +207,7 @@ object ConfigGenerator {
                             .put("outbound", "dns-out")
                     )
 
-                if (hasGeoSite && hasGeoIp) {
+                if (enableGeoCnDirect) {
                     rules.put(
                         JSONObject()
                             .put("geosite", JSONArray().put("cn"))
@@ -196,7 +216,7 @@ object ConfigGenerator {
                     )
                 }
 
-                if (hasGeoSite) {
+                if (enableGeoAdsBlock) {
                     rules.put(
                         JSONObject()
                             .put("geosite", JSONArray().put("category-ads-all"))

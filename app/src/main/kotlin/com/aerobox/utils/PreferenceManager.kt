@@ -34,6 +34,9 @@ object PreferenceManager {
     private val ENABLE_HTTP_INBOUND = booleanPreferencesKey("enable_http_inbound")
     private val ENABLE_IPV6 = booleanPreferencesKey("enable_ipv6")
     private val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
+    private val ENABLE_GEO_RULES = booleanPreferencesKey("enable_geo_rules")
+    private val ENABLE_GEO_CN_DIRECT = booleanPreferencesKey("enable_geo_cn_direct")
+    private val ENABLE_GEO_ADS_BLOCK = booleanPreferencesKey("enable_geo_ads_block")
 
     // ── Existing settings ──
 
@@ -91,6 +94,15 @@ object PreferenceManager {
 
     fun autoReconnectFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_RECONNECT] ?: true }
+
+    fun enableGeoRulesFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_RULES] ?: false }
+
+    fun enableGeoCnDirectFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_CN_DIRECT] ?: true }
+
+    fun enableGeoAdsBlockFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[ENABLE_GEO_ADS_BLOCK] ?: true }
 
     // ── Setters ──
 
@@ -162,5 +174,17 @@ object PreferenceManager {
 
     suspend fun setAutoReconnect(context: Context, enabled: Boolean) {
         context.dataStore.edit { it[AUTO_RECONNECT] = enabled }
+    }
+
+    suspend fun setEnableGeoRules(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_RULES] = enabled }
+    }
+
+    suspend fun setEnableGeoCnDirect(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_CN_DIRECT] = enabled }
+    }
+
+    suspend fun setEnableGeoAdsBlock(context: Context, enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_GEO_ADS_BLOCK] = enabled }
     }
 }

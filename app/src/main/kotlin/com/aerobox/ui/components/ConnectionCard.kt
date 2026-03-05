@@ -133,7 +133,7 @@ fun ConnectionCard(
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
 
         // ── Node selector pill ──
         Row(
@@ -162,7 +162,7 @@ fun ConnectionCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(16.dp))
             Box(
                 modifier = Modifier
                     .size(36.dp)
