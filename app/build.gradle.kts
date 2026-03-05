@@ -65,7 +65,7 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = false   // compress .so inside APK (~30-40% smaller)
+            useLegacyPackaging = true // compress .so inside APK to reduce sideload APK size
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
