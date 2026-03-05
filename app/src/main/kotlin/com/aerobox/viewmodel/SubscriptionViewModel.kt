@@ -158,16 +158,17 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun formatImportResultMessage(result: SubscriptionImportResult): String {
-        if (result.error == null && result.nodeCount > 0) {
+        val error = result.error
+        if (error == null && result.nodeCount > 0) {
             return "导入成功：${result.nodeCount} 个节点"
         }
 
         return when {
-            result.error?.message == SubscriptionRepository.NO_VALID_NODES_ERROR ->
+            error?.message == SubscriptionRepository.NO_VALID_NODES_ERROR ->
                 "导入失败：未解析到可用节点，请检查订阅格式"
 
-            result.error != null ->
-                "导入订阅失败：${toFriendlyError(result.error)}"
+            error != null ->
+                "导入订阅失败：${toFriendlyError(error)}"
 
             else ->
                 "导入失败：未解析到可用节点，请检查订阅格式"
