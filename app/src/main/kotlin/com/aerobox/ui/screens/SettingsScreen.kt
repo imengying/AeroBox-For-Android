@@ -24,10 +24,9 @@ import com.aerobox.ui.icons.AppIcons
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +80,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var showDnsDialog by remember { mutableStateOf(false) }
+    var showRoutingDialog by remember { mutableStateOf(false) }
     var geoUpdating by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -122,9 +122,12 @@ fun SettingsScreen(
         // ── Routing ──
         item { SectionHeader(title = "路由设置") }
         item {
-            RoutingModeSelector(
-                currentMode = routingMode,
-                onModeSelected = { scope.launch { viewModel.setRoutingMode(it) } }
+            SettingItem(
+                modifier = Modifier.clickable { showRoutingDialog = true },
+                icon = { Icon(AppIcons.Security, contentDescription = null) },
+                title = "路由模式",
+                supporting = routingMode.displayName,
+                trailing = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             )
         }
 
@@ -403,47 +406,61 @@ fun SettingsScreen(
             }
         )
     }
+
+    // Routing mode dialog
+    if (showRoutingDialog) {
+        RoutingModeDialog(
+            currentMode = routingMode,
+            onDismiss = { showRoutingDialog = false },
+            onModeSelected = { mode ->
+                scope.launch { viewModel.setRoutingMode(mode) }
+            }
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RoutingModeSelector(
+private fun RoutingModeDialog(
     currentMode: RoutingMode,
+    onDismiss: () -> Unit,
     onModeSelected: (RoutingMode) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            OutlinedTextField(
-                value = currentMode.displayName,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("路由模式") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("路由模式") },
+        text = {
+            Column {
                 RoutingMode.entries.forEach { mode ->
-                    DropdownMenuItem(
-                        text = { Text(mode.displayName) },
-                        onClick = {
-                            onModeSelected(mode)
-                            expanded = false
-                        }
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onModeSelected(mode)
+                                onDismiss()
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = mode == currentMode,
+                            onClick = {
+                                onModeSelected(mode)
+                                onDismiss()
+                            }
+                        )
+                        Text(
+                            text = mode.displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
-    }
+    )
 }
 
 @Composable

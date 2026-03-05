@@ -21,7 +21,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -45,6 +44,7 @@ fun NodeListSheet(
     selectedNodeId: Long,
     onNodeSelected: (ProxyNode) -> Unit,
     onTestAll: () -> Unit,
+    onTestNode: (ProxyNode) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -61,7 +61,7 @@ fun NodeListSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "节点列表",
+                    text = "节点列表 (${nodes.size})",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -99,7 +99,8 @@ fun NodeListSheet(
                         NodeItem(
                             node = node,
                             isSelected = node.id == selectedNodeId,
-                            onClick = { onNodeSelected(node) }
+                            onClick = { onNodeSelected(node) },
+                            onTestLatency = { onTestNode(node) }
                         )
                     }
                 }
@@ -114,7 +115,8 @@ fun NodeListSheet(
 private fun NodeItem(
     node: ProxyNode,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onTestLatency: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -178,21 +180,25 @@ private fun NodeItem(
                 )
             }
 
-            // Latency indicator
-            LatencyBadge(latency = node.latency)
+            // Clickable latency badge — tap to test this node
+            LatencyBadge(
+                latency = node.latency,
+                onClick = onTestLatency
+            )
         }
     }
 }
 
 @Composable
-private fun LatencyBadge(latency: Int) {
+private fun LatencyBadge(latency: Int, onClick: () -> Unit) {
     val (color, text) = when {
-        latency < 0 -> MaterialTheme.colorScheme.outline to "--"
+        latency < 0 -> MaterialTheme.colorScheme.outline to "测速"
         latency < 100 -> Color(0xFF4CAF50) to "${latency}ms"
         latency < 300 -> Color(0xFFFF9800) to "${latency}ms"
         else -> Color(0xFFF44336) to "${latency}ms"
     }
     Surface(
+        modifier = Modifier.clickable(onClick = onClick),
         color = color.copy(alpha = 0.15f),
         shape = MaterialTheme.shapes.small
     ) {

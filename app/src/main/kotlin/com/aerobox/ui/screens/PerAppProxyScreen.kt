@@ -87,7 +87,7 @@ fun PerAppProxyScreen(
         }
     }
 
-    val filteredApps = if (showSystem) apps else apps.filter { !it.isSystem }
+    val filteredApps = apps.filter { if (showSystem) true else !it.isSystem }
 
     Scaffold(
         topBar = {

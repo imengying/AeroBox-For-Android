@@ -60,13 +60,28 @@ jobs:
 
           git clone --depth 1 --branch "${SING_BOX_VERSION}" https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
           pushd "${RUNNER_TEMP}/sing-box"
+
+          # Strip debug symbols from Go binary to reduce .so size by ~20-30%
+          export CGO_LDFLAGS="-s -w"
+          export GOFLAGS="-ldflags=-s -ldflags=-w"
+
           go run ./cmd/internal/build_libbox -target android 2>&1 | tee "${RUNNER_TEMP}/libbox-build.log"
           AAR_PATH="$(find . -type f -name 'libbox.aar' | head -n 1)"
           if [ -z "${AAR_PATH}" ]; then
             echo "libbox.aar was not generated." >&2
             exit 1
           fi
-          cp "${AAR_PATH}" "${GITHUB_WORKSPACE}/app/libs/libbox.aar"
+
+          # Strip native libs inside the AAR for additional size reduction
+          echo "--- stripping native libs in AAR ---"
+          STRIP_DIR="${RUNNER_TEMP}/aar_strip"
+          mkdir -p "${STRIP_DIR}"
+          unzip -q "${AAR_PATH}" -d "${STRIP_DIR}"
+          find "${STRIP_DIR}/jni" -name '*.so' -exec "${AEROBOX_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded {} \;
+          pushd "${STRIP_DIR}"
+          zip -q -r "${GITHUB_WORKSPACE}/app/libs/libbox.aar" .
+          popd
+
           popd
 
       - name: Decode signing keystore (optional)

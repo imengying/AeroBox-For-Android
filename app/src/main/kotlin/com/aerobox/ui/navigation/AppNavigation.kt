@@ -34,6 +34,10 @@ import com.aerobox.ui.screens.LogScreen
 import com.aerobox.ui.screens.PerAppProxyScreen
 import com.aerobox.ui.screens.SettingsScreen
 import com.aerobox.ui.screens.SubscriptionScreen
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import com.aerobox.ui.theme.SingBoxVPNTheme
 import kotlinx.coroutines.launch
 
@@ -53,12 +57,31 @@ fun AppNavigation() {
     // Show main scaffold only on Home/Settings, not on sub-pages
     val isMainRoute = currentRoute == null || currentRoute == "main"
 
+    val slideDuration = 300
+
     NavHost(
         navController = navController,
-        startDestination = "main"
+        startDestination = "main",
+        enterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(slideDuration))
+        },
+        exitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(slideDuration))
+        },
+        popEnterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(slideDuration))
+        },
+        popExitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(slideDuration))
+        }
     ) {
-        composable("main") {
-        MainScreen(
+        composable(
+            "main",
+            enterTransition = { fadeIn(tween(200)) },
+            exitTransition = { fadeOut(tween(200)) },
+            popEnterTransition = { fadeIn(tween(200)) }
+        ) {
+            MainScreen(
                 onNavigateToSubscriptions = {
                     navController.navigate("subscriptions")
                 },

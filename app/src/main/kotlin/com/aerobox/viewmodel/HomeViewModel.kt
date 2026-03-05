@@ -227,4 +227,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun testSingleNodeLatency(node: ProxyNode) {
+        viewModelScope.launch {
+            val latency = com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
+            subscriptionRepository.updateNodeLatency(node.id, latency)
+        }
+    }
 }
