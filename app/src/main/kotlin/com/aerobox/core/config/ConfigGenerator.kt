@@ -82,6 +82,18 @@ object ConfigGenerator {
         routingMode: RoutingMode,
         enableGeoCnDomainRule: Boolean
     ): JSONObject {
+        val localServer = JSONObject()
+            .put("tag", "local")
+            .put("address", localDns)
+            .put("detour", "direct")
+
+        // Strict direct mode: force DNS to local resolver only.
+        if (routingMode == RoutingMode.DIRECT) {
+            return JSONObject()
+                .put("servers", JSONArray().put(localServer))
+                .put("final", "local")
+        }
+
         val remoteAddress = if (enableDoh && !remoteDns.startsWith("tls://") && !remoteDns.startsWith("https://")) {
             "tls://$remoteDns"
         } else {
@@ -94,12 +106,7 @@ object ConfigGenerator {
                     .put("tag", "remote")
                     .put("address", remoteAddress)
             )
-            .put(
-                JSONObject()
-                    .put("tag", "local")
-                    .put("address", localDns)
-                    .put("detour", "direct")
-            )
+            .put(localServer)
 
         val dns = JSONObject().put("servers", servers)
 
