@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 object VpnStateManager {
     private val _vpnState = MutableStateFlow(VpnState())
     val vpnState: StateFlow<VpnState> = _vpnState.asStateFlow()
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     fun updateConnectionState(isConnected: Boolean, node: ProxyNode?) {
         val current = _vpnState.value
@@ -17,7 +19,18 @@ object VpnStateManager {
             currentNode = if (isConnected) node else null,
             connectionTime = if (isConnected) System.currentTimeMillis() else 0L
         )
+        if (isConnected) {
+            _lastError.value = null
+        }
         AeroBoxTileService.requestRefresh()
+    }
+
+    fun updateLastError(error: String?) {
+        _lastError.value = error?.takeIf { it.isNotBlank() }
+    }
+
+    fun clearLastError() {
+        _lastError.value = null
     }
 
     fun updateTrafficStats(

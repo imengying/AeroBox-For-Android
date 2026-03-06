@@ -1,5 +1,6 @@
 package com.aerobox.service
 
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Icon
@@ -63,21 +64,20 @@ class AeroBoxTileService : TileService() {
             if (permissionIntent != null) {
                 // Cannot grant VPN permission from TileService directly;
                 // need to start activity to handle permission
+                val launchIntent = Intent(this, com.aerobox.MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("action", "toggle_vpn")
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     startActivityAndCollapse(
-                        Intent(this, com.aerobox.MainActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            putExtra("action", "toggle_vpn")
-                        }
+                        PendingIntent.getActivity(
+                            this, 0, launchIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
                     )
                 } else {
                     @Suppress("DEPRECATION")
-                    startActivityAndCollapse(
-                        Intent(this, com.aerobox.MainActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            putExtra("action", "toggle_vpn")
-                        }
-                    )
+                    startActivityAndCollapse(launchIntent)
                 }
                 return
             }

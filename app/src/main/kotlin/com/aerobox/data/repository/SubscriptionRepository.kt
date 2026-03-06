@@ -17,6 +17,14 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+data class SubscriptionFetchResult(
+    val content: String,
+    val uploadBytes: Long = 0,
+    val downloadBytes: Long = 0,
+    val totalBytes: Long = 0,
+    val expireTimestamp: Long = 0
+)
+
 data class SubscriptionImportResult(
     val subscriptionId: Long,
     val nodeCount: Int,
@@ -57,8 +65,8 @@ class SubscriptionRepository(context: Context) {
         )
         val subscriptionId = subscriptionDao.insert(subscription)
         val importResult = runCatching {
-            val content = fetchSubscriptionContent(url)
-            val parsedNodes = SubscriptionParser.parseSubscription(content)
+            val fetchResult = fetchSubscription(url)
+            val parsedNodes = SubscriptionParser.parseSubscription(fetchResult.content)
             val nodes = parsedNodes.map { it.copy(subscriptionId = subscriptionId) }
 
             if (nodes.isEmpty()) {
@@ -70,7 +78,11 @@ class SubscriptionRepository(context: Context) {
                 subscription.copy(
                     id = subscriptionId,
                     updateTime = System.currentTimeMillis(),
-                    nodeCount = nodes.size
+                    nodeCount = nodes.size,
+                    uploadBytes = fetchResult.uploadBytes,
+                    downloadBytes = fetchResult.downloadBytes,
+                    totalBytes = fetchResult.totalBytes,
+                    expireTimestamp = fetchResult.expireTimestamp
                 )
             )
             SubscriptionImportResult(
@@ -96,8 +108,8 @@ class SubscriptionRepository(context: Context) {
     }
 
     suspend fun updateSubscription(subscription: Subscription) {
-        val content = fetchSubscriptionContent(subscription.url)
-        val parsedNodes = SubscriptionParser.parseSubscription(content)
+        val fetchResult = fetchSubscription(subscription.url)
+        val parsedNodes = SubscriptionParser.parseSubscription(fetchResult.content)
         val nodes = parsedNodes.map { it.copy(subscriptionId = subscription.id) }
 
         if (nodes.isEmpty()) {
@@ -110,7 +122,11 @@ class SubscriptionRepository(context: Context) {
         subscriptionDao.update(
             subscription.copy(
                 updateTime = System.currentTimeMillis(),
-                nodeCount = nodes.size
+                nodeCount = nodes.size,
+                uploadBytes = fetchResult.uploadBytes,
+                downloadBytes = fetchResult.downloadBytes,
+                totalBytes = fetchResult.totalBytes,
+                expireTimestamp = fetchResult.expireTimestamp
             )
         )
     }
@@ -137,7 +153,7 @@ class SubscriptionRepository(context: Context) {
 
     suspend fun getNodeById(nodeId: Long): ProxyNode? = proxyNodeDao.getNodeById(nodeId)
 
-    private suspend fun fetchSubscriptionContent(url: String): String =
+    private suspend fun fetchSubscription(url: String): SubscriptionFetchResult =
         suspendCancellableCoroutine { cont ->
             val request = Request.Builder()
                 .url(url)
@@ -151,7 +167,19 @@ class SubscriptionRepository(context: Context) {
                         if (!it.isSuccessful) {
                             cont.resumeWithException(IOException("HTTP ${it.code}"))
                         } else {
-                            cont.resume(it.body?.string() ?: "")
+                            val content = it.body?.string() ?: ""
+                            val userInfo = parseSubscriptionUserInfo(
+                                it.header("Subscription-Userinfo")
+                            )
+                            cont.resume(
+                                SubscriptionFetchResult(
+                                    content = content,
+                                    uploadBytes = userInfo["upload"] ?: 0,
+                                    downloadBytes = userInfo["download"] ?: 0,
+                                    totalBytes = userInfo["total"] ?: 0,
+                                    expireTimestamp = userInfo["expire"] ?: 0
+                                )
+                            )
                         }
                     }
                 }
@@ -160,6 +188,17 @@ class SubscriptionRepository(context: Context) {
                 }
             })
         }
+
+    private fun parseSubscriptionUserInfo(header: String?): Map<String, Long> {
+        if (header.isNullOrBlank()) return emptyMap()
+        return header.split(";")
+            .mapNotNull { part ->
+                val kv = part.trim().split("=", limit = 2)
+                if (kv.size == 2) kv[0].trim() to (kv[1].trim().toLongOrNull() ?: 0L)
+                else null
+            }
+            .toMap()
+    }
 
     private fun shouldAutoUpdate(subscription: Subscription, now: Long): Boolean {
         if (!subscription.autoUpdate) return false

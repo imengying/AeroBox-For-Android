@@ -61,5 +61,6 @@ data class ProxyNode(
     val peerPublicKey: String? = null,
     val preSharedKey: String? = null,
     val reserved: String? = null,
-    val mtu: Int? = null
+    val mtu: Int? = null,
+    val allowInsecure: Boolean = false
 )

@@ -143,6 +143,9 @@ object ClashParser {
             if (normalizedNetwork == "grpc") transportPath else null
         )
 
+        val insecure = map["skip-cert-verify"]?.equals("true", true) == true
+                || map["allow-insecure"]?.equals("true", true) == true
+
         return ProxyNode(
             name = name,
             type = type,
@@ -169,7 +172,8 @@ object ClashParser {
             peerPublicKey = map["public-key"] ?: map["peer-public-key"],
             preSharedKey = map["pre-shared-key"] ?: map["preshared-key"],
             reserved = map["reserved"],
-            mtu = map["mtu"]?.toIntOrNull()
+            mtu = map["mtu"]?.toIntOrNull(),
+            allowInsecure = insecure
         )
     }
 

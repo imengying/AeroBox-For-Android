@@ -135,7 +135,11 @@ object SubscriptionParser {
             transportHost = json.optString("host").ifBlank { null },
             transportPath = if (network == "grpc") null else rawPath,
             transportServiceName = json.optString("serviceName", json.optString("service_name", ""))
-                .ifBlank { if (network == "grpc") rawPath else null }
+                .ifBlank { if (network == "grpc") rawPath else null },
+            allowInsecure = parseBooleanField(
+                json.optString("allowInsecure"),
+                json.optString("allow_insecure")
+            )
         )
     }
 
@@ -172,7 +176,11 @@ object SubscriptionParser {
             alpn = params["alpn"],
             fingerprint = params["fp"],
             publicKey = params["pbk"],
-            shortId = params["sid"]
+            shortId = params["sid"],
+            allowInsecure = parseBooleanField(
+                params["allowInsecure"],
+                params["insecure"]
+            )
         )
     }
 
@@ -202,6 +210,10 @@ object SubscriptionParser {
                 params["serviceName"],
                 params["service_name"],
                 if (network == "grpc") params["path"] else null
+            ),
+            allowInsecure = parseBooleanField(
+                params["allowInsecure"],
+                params["insecure"]
             )
         )
     }
@@ -225,7 +237,11 @@ object SubscriptionParser {
             password = extractUserInfo(parsed),
             tls = true,
             sni = params["sni"],
-            alpn = params["alpn"]
+            alpn = params["alpn"],
+            allowInsecure = parseBooleanField(
+                params["allowInsecure"],
+                params["insecure"]
+            )
         )
     }
 
@@ -248,7 +264,11 @@ object SubscriptionParser {
             password = password.ifBlank { null },
             tls = true,
             sni = params["sni"],
-            alpn = params["alpn"]
+            alpn = params["alpn"],
+            allowInsecure = parseBooleanField(
+                params["allowInsecure"],
+                params["insecure"]
+            )
         )
     }
 
@@ -344,7 +364,10 @@ object SubscriptionParser {
                 peerPublicKey = obj.optString("peer_public_key", "").ifBlank { null },
                 preSharedKey = obj.optString("pre_shared_key", "").ifBlank { null },
                 reserved = obj.optString("reserved", "").ifBlank { null },
-                mtu = obj.optInt("mtu", 0).takeIf { it > 0 }
+                mtu = obj.optInt("mtu", 0).takeIf { it > 0 },
+                allowInsecure = obj.optBoolean("allowInsecure", false)
+                        || obj.optBoolean("allow_insecure", false)
+                        || parseBooleanField(obj.optString("allowInsecure"))
             )
         }
         return result
@@ -443,5 +466,11 @@ object SubscriptionParser {
         val authority = uri.encodedAuthority ?: return null
         if (!authority.contains('@')) return null
         return decodeName(authority.substringBefore('@'))
+    }
+
+    private fun parseBooleanField(vararg values: String?): Boolean {
+        return values.any { v ->
+            v != null && (v == "1" || v.equals("true", true))
+        }
     }
 }

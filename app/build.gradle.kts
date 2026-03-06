@@ -103,7 +103,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.tukaani:xz:1.9")
 
-    implementation(files("libs/libbox.aar"))
+    implementation(files(layout.buildDirectory.file("libbox/libbox.aar")))
 
     implementation("com.google.accompanist:accompanist-drawablepainter:0.34.0")
 

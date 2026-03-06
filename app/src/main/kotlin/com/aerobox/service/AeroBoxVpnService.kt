@@ -65,12 +65,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var commandServer: CommandServer? = null
     private var receiverRegistered = false
 
-    // Auto-reconnect state
     private var lastConfig: String? = null
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
-    private val maxReconnectAttempts = 3
 
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -139,19 +137,19 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     receiverRegistered = true
                 }
 
-                // Create and start CommandServer
+                DefaultNetworkMonitor.start()
+
                 val server = commandServer ?: CommandServer(this@AeroBoxVpnService, this@AeroBoxVpnService).also {
                     it.start()
                     commandServer = it
                 }
 
-                // Start or reload the sing-box service with config
                 val overrides = buildOverrideOptions()
-
                 server.startOrReloadService(config, overrides)
 
             }.onFailure { e ->
                 Log.e(TAG, "startVpn failed", e)
+                VpnStateManager.updateLastError(e.message ?: e.toString())
                 stopService()
             }
         }
@@ -236,7 +234,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         speedTickerJob?.cancel()
         speedTickerJob = null
 
-        // Close sing-box service
+        DefaultNetworkMonitor.stop()
+
+        runCatching { commandServer?.closeService() }
         runCatching {
             commandServer?.close()
             commandServer = null
@@ -357,6 +357,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                         val r = inet4RouteRange.next()
                         builder.addRoute(r.address(), r.prefix())
                     }
+                } else {
+                    builder.addRoute("0.0.0.0", 0)
                 }
 
                 val inet6RouteRange = options.inet6RouteRange
@@ -365,6 +367,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                         val r = inet6RouteRange.next()
                         builder.addRoute(r.address(), r.prefix())
                     }
+                } else if (options.inet6Address.hasNext()) {
+                    builder.addRoute("::", 0)
                 }
             }
         }
@@ -386,6 +390,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             resolveCurrentNode(null)
         }
         _isRunning.value = true
+        VpnStateManager.clearLastError()
         VpnStateManager.updateConnectionState(true, connectedNode)
         val notification = buildNotification(connected = true)
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
@@ -504,15 +509,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 stopService()
                 return@launch
             }
-            if (reconnectAttempts >= maxReconnectAttempts) {
-                Log.w(TAG, "Max reconnect attempts reached, giving up")
-                stopService()
-                return@launch
-            }
 
             reconnectAttempts++
-            val backoffMs = 1000L * (1L shl (reconnectAttempts - 1).coerceAtMost(4))
-            Log.i(TAG, "Auto-reconnect attempt $reconnectAttempts/$maxReconnectAttempts in ${backoffMs}ms")
+            val backoffMs = 1000L * (1L shl (reconnectAttempts - 1).coerceAtMost(5))
+            Log.i(TAG, "Auto-reconnect attempt $reconnectAttempts in ${backoffMs}ms")
             delay(backoffMs)
 
             if (userRequestedStop) return@launch

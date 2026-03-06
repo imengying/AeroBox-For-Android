@@ -103,6 +103,7 @@ object ConfigGenerator {
                 JSONObject()
                     .put("tag", "remote")
                     .put("address", remoteAddress)
+                    .put("address_resolver", "local")
             )
             .put(localServer)
 
@@ -164,12 +165,11 @@ object ConfigGenerator {
     ): JSONArray {
         val inbounds = JSONArray()
         val tunAddresses = JSONArray()
-            .put("172.19.0.1/30")
+            .put("172.19.0.1/28")
         if (enableIPv6) {
             tunAddresses.put("fdfe:dcba:9876::1/126")
         }
 
-        // TUN (always present)
         val tunInbound = JSONObject()
             .put("type", "tun")
             .put("tag", "tun-in")
@@ -178,7 +178,8 @@ object ConfigGenerator {
             .put("mtu", 9000)
             .put("auto_route", true)
             .put("strict_route", true)
-            .put("stack", "system")
+            .put("endpoint_independent_nat", true)
+            .put("stack", "mixed")
 
         inbounds.put(tunInbound)
 
@@ -317,8 +318,24 @@ object ConfigGenerator {
             )
             .put(
                 JSONObject()
+                    .put("port", JSONArray().put(53))
+                    .put("action", "hijack-dns")
+            )
+            .put(
+                JSONObject()
                     .put("protocol", "dns")
                     .put("action", "hijack-dns")
+            )
+            .put(
+                JSONObject()
+                    .put("ip_is_private", true)
+                    .put("outbound", "direct")
+            )
+            .put(
+                JSONObject()
+                    .put("ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
+                    .put("source_ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
+                    .put("action", "reject")
             )
     }
 
@@ -425,6 +442,9 @@ object ConfigGenerator {
     private fun buildTlsObject(node: ProxyNode, includeReality: Boolean = false): JSONObject {
         val tls = JSONObject()
             .put("enabled", node.tls)
+        if (node.allowInsecure) {
+            tls.put("insecure", true)
+        }
         node.sni?.let { tls.put("server_name", it) }
 
         if (!node.alpn.isNullOrBlank()) {

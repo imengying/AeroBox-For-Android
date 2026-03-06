@@ -13,10 +13,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     env:
-      ANDROID_NDK_VERSION: 28.2.13676358
-      # Neko-style slim profile: keep core modern protocols, drop heavy optional modules
-      LIBBOX_BUILD_TAGS: with_quic,with_wireguard,with_utls
-      GOMOBILE_TOOLCHAIN: go1.24.10
+      ANDROID_NDK_VERSION: 28.0.13004108
+      GOMOBILE_VERSION: v0.1.12
+      LIBBOX_BUILD_TAGS: with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api
 
     steps:
       - name: Checkout
@@ -24,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 17 (libbox)
+      - name: Set up JDK 17 (libbox build)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -33,7 +32,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "~1.25"
           cache: false
 
       - name: Set up Gradle
@@ -48,155 +47,70 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
-          echo "AEROBOX_ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
 
       - name: Resolve latest stable sing-box release
         run: |
           set -euo pipefail
-
-          get_latest_release() {
-            curl --silent "https://api.github.com/repos/$1/releases/latest" \
+          SING_BOX_VERSION="$(
+            curl -fsSL "https://api.github.com/repos/SagerNet/sing-box/releases/latest" \
               | grep '"tag_name":' \
               | sed -E 's/.*"([^"]+)".*/\1/'
-          }
-
-          SING_BOX_VERSION="$(get_latest_release "SagerNet/sing-box")"
-          if [ -z "${SING_BOX_VERSION}" ]; then
-            echo "Failed to resolve sing-box version." >&2
-            exit 1
-          fi
-
-          GO_MOD_URL="https://raw.githubusercontent.com/SagerNet/sing-box/${SING_BOX_VERSION}/go.mod"
-          GOMOBILE_TOOLCHAIN="$(
-            curl -fLSs "${GO_MOD_URL}" \
-              | awk '
-                  /^toolchain go/ { print $2; exit }
-                  /^go / { print "go" $2; exit }
-                '
           )"
-          if [ -z "${GOMOBILE_TOOLCHAIN}" ]; then
-            echo "Failed to resolve Go toolchain from ${GO_MOD_URL}." >&2
+          if [ -z "${SING_BOX_VERSION}" ]; then
+            echo "::error::Failed to resolve latest sing-box version"
             exit 1
           fi
-
           echo "SING_BOX_VERSION=${SING_BOX_VERSION}" >> "${GITHUB_ENV}"
-          echo "GOMOBILE_TOOLCHAIN=${GOMOBILE_TOOLCHAIN}" >> "${GITHUB_ENV}"
-          echo "Using sing-box ${SING_BOX_VERSION} with ${GOMOBILE_TOOLCHAIN}"
+          echo "Resolved sing-box version: ${SING_BOX_VERSION}"
 
       - name: Build libbox.aar
         run: |
           set -euo pipefail
-          export ANDROID_NDK_HOME="${AEROBOX_ANDROID_NDK}"
-          export ANDROID_NDK_ROOT="${AEROBOX_ANDROID_NDK}"
-          export NDK="${AEROBOX_ANDROID_NDK}"
-          go version
-          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go version
-          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
-          GOTOOLCHAIN="${GOMOBILE_TOOLCHAIN}" go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
+
+          # Install gomobile / gobind (same version as SFA official)
+          go install github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}
+          go install github.com/sagernet/gomobile/cmd/gobind@${GOMOBILE_VERSION}
           export PATH="$(go env GOPATH)/bin:${PATH}"
-          gomobile init
 
-          git clone --depth 1 --branch "${SING_BOX_VERSION}" https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
-          pushd "${RUNNER_TEMP}/sing-box"
+          # Clone sing-box source at the resolved stable tag
+          git clone --depth 1 --branch "${SING_BOX_VERSION}" \
+            https://github.com/SagerNet/sing-box.git "${RUNNER_TEMP}/sing-box"
+          cd "${RUNNER_TEMP}/sing-box"
 
-          # Align libbox feature set with Neko-style aggressive profile to reduce .so size.
-          BUILD_LIBBOX_MAIN="cmd/internal/build_libbox/main.go"
-          if [ ! -f "${BUILD_LIBBOX_MAIN}" ]; then
-            echo "Cannot find ${BUILD_LIBBOX_MAIN}" >&2
-            exit 1
-          fi
-          python3 - "${BUILD_LIBBOX_MAIN}" "${LIBBOX_BUILD_TAGS}" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
+          SING_VERSION="${SING_BOX_VERSION#v}"
+          echo "Building libbox ${SING_VERSION} with tags: ${LIBBOX_BUILD_TAGS}"
 
-          path = Path(sys.argv[1])
-          tags = [tag.strip() for tag in sys.argv[2].split(",") if tag.strip()]
-          source = path.read_text(encoding="utf-8")
-          items = ", ".join(f'"{tag}"' for tag in tags)
+          # Build with gomobile bind directly (no need to patch build_libbox)
+          mkdir -p "${GITHUB_WORKSPACE}/app/build/libbox"
+          gomobile bind -v \
+            -o "${GITHUB_WORKSPACE}/app/build/libbox/libbox.aar" \
+            -target android \
+            -androidapi 31 \
+            -javapkg=io.nekohasekai \
+            -libname=box \
+            -trimpath \
+            -buildvcs=false \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=${SING_VERSION} -s -w -buildid= -checklinkname=0" \
+            -tags "${LIBBOX_BUILD_TAGS}" \
+            ./experimental/libbox
 
-          patterns = [
-              (
-                  r"sharedTags\s*=\s*append\(\s*sharedTags\s*,\s*[^)]*\)",
-                  f"sharedTags = append(sharedTags, {items})",
-              ),
-              (
-                  r"sharedTags\s*:=\s*\[\]string\{[^}]*\}",
-                  f"sharedTags := []string{{{items}}}",
-              ),
-              (
-                  r"sharedTags\s*=\s*\[\]string\{[^}]*\}",
-                  f"sharedTags = []string{{{items}}}",
-              ),
-          ]
+          AAR_PATH="${GITHUB_WORKSPACE}/app/build/libbox/libbox.aar"
+          echo "--- libbox.aar built ---"
+          ls -lh "${AAR_PATH}"
 
-          patched = False
-          for pattern, replacement in patterns:
-              new_source, count = re.subn(pattern, replacement, source, count=1, flags=re.S)
-              if count:
-                  source = new_source
-                  patched = True
-                  break
-
-          # Tailscale currently depends on gVisor symbols in this sing-box version.
-          # When using slim profile without gvisor, force-remove tailscale-related tags.
-          source = re.sub(r'"with_tailscale"\s*,?', "", source)
-          source = re.sub(r'"ts_omit_[^"]+"\s*,?', "", source)
-          source = re.sub(r",\s*,", ",", source)
-          source = re.sub(r"\[\s*,", "[", source)
-          source = re.sub(r",\s*]", "]", source)
-
-          if patched:
-              path.write_text(source, encoding="utf-8")
-              print(f"Patched sharedTags in {path}")
-          else:
-              print(f"No sharedTags pattern found in {path}, keeping upstream defaults.")
-              path.write_text(source, encoding="utf-8")
-          PY
-          grep -n "sharedTags" "${BUILD_LIBBOX_MAIN}" | head -n 4 || true
-          grep -n "tailscale\\|ts_omit" "${BUILD_LIBBOX_MAIN}" || true
-          if grep -Eq "with_tailscale|ts_omit_" "${BUILD_LIBBOX_MAIN}"; then
-            echo "tailscale tags are still present after patch; refusing to continue." >&2
-            exit 1
-          fi
-
-          # Strip debug symbols from Go binary to reduce .so size by ~20-30%
-          export CGO_LDFLAGS="-s -w"
-          export GOFLAGS="-ldflags=-s -ldflags=-w"
-
-          set +e
-          go run ./cmd/internal/build_libbox -target android 2>&1 | tee "${RUNNER_TEMP}/libbox-build.log"
-          BUILD_STATUS=${PIPESTATUS[0]}
-          set -e
-          if grep -q "with_tailscale" "${RUNNER_TEMP}/libbox-build.log"; then
-            echo "Detected with_tailscale in libbox build tags. Keep tailscale disabled for slim profile." >&2
-            exit 1
-          fi
-          if [ "${BUILD_STATUS}" -ne 0 ]; then
-            exit "${BUILD_STATUS}"
-          fi
-          AAR_PATH="$(find . -type f -name 'libbox.aar' | head -n 1)"
-          if [ -z "${AAR_PATH}" ]; then
-            echo "libbox.aar was not generated." >&2
-            exit 1
-          fi
-
-          # Strip native libs inside the AAR for additional size reduction
-          echo "--- stripping native libs in AAR ---"
           STRIP_DIR="${RUNNER_TEMP}/aar_strip"
           mkdir -p "${STRIP_DIR}"
           unzip -q "${AAR_PATH}" -d "${STRIP_DIR}"
-          find "${STRIP_DIR}/jni" -name '*.so' -exec "${AEROBOX_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded {} \;
-          echo "--- libbox native sizes after strip ---"
-          find "${STRIP_DIR}/jni" -name '*.so' -print0 | while IFS= read -r -d '' so; do
-            size_kb="$(du -k "${so}" | cut -f1)"
-            echo "${size_kb} KB  ${so#${STRIP_DIR}/}"
-          done | sort -n
-          pushd "${STRIP_DIR}"
-          zip -q -r "${GITHUB_WORKSPACE}/app/libs/libbox.aar" .
-          popd
-
-          popd
+          LLVM_STRIP="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          if [ -x "${LLVM_STRIP}" ]; then
+            find "${STRIP_DIR}/jni" -name '*.so' -exec "${LLVM_STRIP}" --strip-unneeded {} \;
+            echo "--- .so sizes after strip ---"
+            find "${STRIP_DIR}/jni" -name '*.so' -exec du -h {} \; | sort -h
+            pushd "${STRIP_DIR}"
+            zip -q -r "${AAR_PATH}" .
+            popd
+          fi
 
       - name: Decode signing keystore (optional)
         env:
@@ -216,20 +130,20 @@ jobs:
           echo "AEROBOX_TAG=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           if [ -z "${VERSION_NAME}" ] || [ "${VERSION_NAME}" = "${GITHUB_REF_NAME}" ]; then
-            echo "Invalid tag format: ${GITHUB_REF_NAME}. Expected v1 / v1.2 / v1.2.3 (optional -suffix/+meta)." >&2
+            echo "::error::Invalid tag format: ${GITHUB_REF_NAME}. Expected v1.2.3"
             exit 1
           fi
 
           BASE_VERSION="${VERSION_NAME%%[-+]*}"
           IFS='.' read -r -a VERSION_PARTS <<< "${BASE_VERSION}"
           if [ "${#VERSION_PARTS[@]}" -lt 1 ] || [ "${#VERSION_PARTS[@]}" -gt 3 ]; then
-            echo "Tag must be numeric semver, for example v1.2.3" >&2
+            echo "::error::Tag must be numeric semver, e.g. v1.2.3"
             exit 1
           fi
 
           for part in "${VERSION_PARTS[@]}"; do
             if ! [[ "${part}" =~ ^[0-9]+$ ]]; then
-              echo "Tag must be numeric semver, for example v1.2.3" >&2
+              echo "::error::Tag must be numeric semver, e.g. v1.2.3"
               exit 1
             fi
           done
@@ -237,8 +151,8 @@ jobs:
           MAJOR="${VERSION_PARTS[0]}"
           MINOR="${VERSION_PARTS[1]:-0}"
           PATCH="${VERSION_PARTS[2]:-0}"
-
           VERSION_CODE=$((10#${MAJOR} * 10000 + 10#${MINOR} * 100 + 10#${PATCH}))
+
           echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
           echo "AEROBOX_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
 
@@ -250,7 +164,7 @@ jobs:
           mkdir -p "${ASSET_DIR}"
 
           get_latest_release() {
-            curl --silent "https://api.github.com/repos/$1/releases/latest" \
+            curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
               | grep '"tag_name":' \
               | sed -E 's/.*"([^"]+)".*/\1/'
           }
@@ -258,7 +172,7 @@ jobs:
           GEOIP_TAG="$(get_latest_release "SagerNet/sing-geoip")"
           GEOSITE_TAG="$(get_latest_release "SagerNet/sing-geosite")"
           if [ -z "${GEOIP_TAG}" ] || [ -z "${GEOSITE_TAG}" ]; then
-            echo "Failed to resolve geo asset versions." >&2
+            echo "::error::Failed to resolve geo asset versions"
             exit 1
           fi
 
@@ -271,6 +185,7 @@ jobs:
             -o "${ASSET_DIR}/geosite-cn.srs"
           curl -fLSs "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs" \
             -o "${ASSET_DIR}/geosite-category-ads-all.srs"
+
           xz -z -9 -f "${ASSET_DIR}/geoip-cn.srs"
           xz -z -9 -f "${ASSET_DIR}/geosite-cn.srs"
           xz -z -9 -f "${ASSET_DIR}/geosite-category-ads-all.srs"
@@ -294,8 +209,7 @@ jobs:
           AEROBOX_VERSION_CODE: ${{ env.AEROBOX_VERSION_CODE }}
         run: |
           set -euo pipefail
-          EXTRA_ARGS=()
-          EXTRA_ARGS+=(
+          EXTRA_ARGS=(
             "-PAEROBOX_VERSION_NAME=${AEROBOX_VERSION_NAME}"
             "-PAEROBOX_VERSION_CODE=${AEROBOX_VERSION_CODE}"
           )
@@ -307,9 +221,9 @@ jobs:
               "-Pandroid.injected.signing.key.password=${KEY_PASSWORD}"
             )
           fi
-          gradle --stacktrace :app:assembleRelease "${EXTRA_ARGS[@]}" 2>&1 | tee "${RUNNER_TEMP}/gradle-build.log"
+          gradle --stacktrace :app:assembleRelease "${EXTRA_ARGS[@]}"
 
-      - name: Rename APKs (NekoBox style)
+      - name: Rename APKs
         env:
           AEROBOX_VERSION_NAME: ${{ env.AEROBOX_VERSION_NAME }}
         run: |
@@ -320,7 +234,7 @@ jobs:
           shopt -s nullglob
           APKS=("${SRC_DIR}"/*.apk)
           if [ "${#APKS[@]}" -eq 0 ]; then
-            echo "No APK files found in ${SRC_DIR}" >&2
+            echo "::error::No APK files found in ${SRC_DIR}"
             exit 1
           fi
 
@@ -339,39 +253,15 @@ jobs:
           echo "Renamed APK outputs:"
           ls -la "${DIST_DIR}"
 
-      - name: Debug logs and directory tree on failure
+      - name: Debug logs on failure
         if: failure()
         run: |
           set +e
-          echo "========== libbox build log =========="
-          if [ -f "${RUNNER_TEMP}/libbox-build.log" ]; then
-            cat "${RUNNER_TEMP}/libbox-build.log"
-          else
-            echo "No libbox build log found."
-          fi
-
-          echo "========== gradle build log =========="
-          if [ -f "${RUNNER_TEMP}/gradle-build.log" ]; then
-            cat "${RUNNER_TEMP}/gradle-build.log"
-          else
-            echo "No gradle build log found."
-          fi
-
-          echo "========== sing-box directory tree =========="
-          if [ -d "${RUNNER_TEMP}/sing-box" ]; then
-            find "${RUNNER_TEMP}/sing-box" -maxdepth 4 -print | sort
-          else
-            echo "No sing-box directory found."
-          fi
-
-          echo "========== app/libs =========="
-          ls -la "${GITHUB_WORKSPACE}/app/libs" || true
-
+          echo "========== libbox.aar =========="
+          ls -la "${GITHUB_WORKSPACE}/app/build/libbox/" || true
           echo "========== app/build/outputs =========="
           if [ -d "${GITHUB_WORKSPACE}/app/build/outputs" ]; then
             find "${GITHUB_WORKSPACE}/app/build/outputs" -maxdepth 5 -print | sort
-          else
-            echo "No app/build/outputs directory found."
           fi
 
       - name: Upload build artifacts

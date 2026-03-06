@@ -144,8 +144,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val uid = android.os.Process.myUid()
-                var prevTx = android.net.TrafficStats.getUidTxBytes(uid)
-                var prevRx = android.net.TrafficStats.getUidRxBytes(uid)
+                val baseTx = android.net.TrafficStats.getUidTxBytes(uid)
+                val baseRx = android.net.TrafficStats.getUidRxBytes(uid)
+                var prevTx = baseTx
+                var prevRx = baseRx
 
                 connectWatchdogJob?.cancel()
                 connectWatchdogJob = null
@@ -160,8 +162,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     VpnStateManager.updateTrafficStats(
                         uploadSpeed = uploadSpeed,
                         downloadSpeed = downloadSpeed,
-                        totalUpload = curTx,
-                        totalDownload = curRx
+                        totalUpload = (curTx - baseTx).coerceAtLeast(0L),
+                        totalDownload = (curRx - baseRx).coerceAtLeast(0L)
                     )
                     prevTx = curTx
                     prevRx = curRx
@@ -197,6 +199,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             runCatching {
+                VpnStateManager.clearLastError()
                 val autoUpdateSubscription = PreferenceManager
                     .autoUpdateSubscriptionFlow(appContext)
                     .first()
@@ -232,6 +235,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         connectWatchdogJob?.cancel()
         connectWatchdogJob = null
         runCatching { vpnRepository.stopVpn() }
+        VpnStateManager.clearLastError()
         VpnStateManager.updateConnectionState(false, null)
         VpnStateManager.resetStats()
     }
@@ -241,12 +245,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         connectWatchdogJob = viewModelScope.launch {
             delay(12_000)
             if (!vpnRepository.isRunning.value && !vpnState.value.isConnected) {
-                _connectionIssue.value = ConnectionIssue(
-                    title = "连接超时",
-                    message = "启动服务超时，请检查节点配置或切换节点后重试。",
-                    rawError = "service start timeout"
-                )
-                context.showToast("连接超时，请查看日志后重试")
+                val rawError = VpnStateManager.lastError.value ?: "service start timeout"
+                handleConnectionFailure(context, rawError)
             }
         }
     }
@@ -262,7 +262,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun testSelectedNodeLatency(onResult: (Int) -> Unit = {}) {
         val node = selectedNode.value ?: return
         viewModelScope.launch {
-            val latency = com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
+            val latency = testNodeLatency(node)
             subscriptionRepository.updateNodeLatency(node.id, latency)
             onResult(latency)
         }
@@ -279,13 +279,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val jobs = allNodes.value.map { node ->
                 launch {
-                    val latency = com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
+                    val latency = testNodeLatency(node)
                     subscriptionRepository.updateNodeLatency(node.id, latency)
                 }
             }
             jobs.forEach { it.join() }
 
-            // Auto-select best (lowest latency) node after all tests complete
             val updatedNodes = nodeDao.getAllNodes().first()
             val bestNode = updatedNodes
                 .filter { it.latency > 0 }
@@ -298,9 +297,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testSingleNodeLatency(node: ProxyNode) {
         viewModelScope.launch {
-            val latency = com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
+            val latency = testNodeLatency(node)
             subscriptionRepository.updateNodeLatency(node.id, latency)
         }
+    }
+
+    private suspend fun testNodeLatency(node: ProxyNode): Int {
+        if (vpnState.value.isConnected) {
+            val urlLatency = com.aerobox.utils.NetworkUtils.urlTest()
+            if (urlLatency > 0) return urlLatency
+        }
+        return com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
     }
 
     fun refreshNetworkInfo() {

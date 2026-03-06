@@ -67,10 +67,11 @@ interface PlatformInterfaceWrapper : PlatformInterface {
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
-        // Simplified: no-op for now. Full impl would use DefaultNetworkMonitor.
+        DefaultNetworkMonitor.setListener(listener)
     }
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
+        DefaultNetworkMonitor.setListener(null)
     }
 
     override fun getInterfaces(): NetworkInterfaceIterator {
