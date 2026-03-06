@@ -9,6 +9,13 @@ import java.net.URI
 
 object ConfigGenerator {
 
+    private data class DnsServerSpec(
+        val type: String,
+        val server: String,
+        val serverPort: Int,
+        val path: String? = null
+    )
+
     fun generateSingBoxConfig(
         node: ProxyNode,
         routingMode: RoutingMode = RoutingMode.RULE_BASED,
@@ -84,30 +91,40 @@ object ConfigGenerator {
         routingMode: RoutingMode,
         enableGeoCnDomainRule: Boolean
     ): JSONObject {
-        val localServer = JSONObject()
-            .put("tag", "local")
-            .put("address", localDns)
-            .put("detour", "direct")
+        val bootstrapServer = JSONObject()
+            .put("type", "local")
+            .put("tag", "bootstrap")
+
+        val localServer = buildDnsServer(
+            tag = "local",
+            dns = normalizeLocalDnsAddress(localDns),
+            detour = "direct",
+            resolverTag = "bootstrap"
+        )
 
         // Strict direct mode: force DNS to local resolver only.
         if (routingMode == RoutingMode.DIRECT) {
             return JSONObject()
-                .put("servers", JSONArray().put(localServer))
+                .put("servers", JSONArray().put(localServer).put(bootstrapServer))
                 .put("final", "local")
         }
 
-        val remoteAddress = normalizeRemoteDnsAddress(remoteDns, enableDoh)
+        val remoteServer = buildDnsServer(
+            tag = "remote",
+            dns = normalizeRemoteDnsAddress(remoteDns, enableDoh),
+            detour = "proxy",
+            resolverTag = "bootstrap"
+        )
 
-        val servers = JSONArray()
+        val dns = JSONObject()
             .put(
-                JSONObject()
-                    .put("tag", "remote")
-                    .put("address", remoteAddress)
-                    .put("address_resolver", "local")
+                "servers",
+                JSONArray()
+                    .put(remoteServer)
+                    .put(localServer)
+                    .put(bootstrapServer)
             )
-            .put(localServer)
-
-        val dns = JSONObject().put("servers", servers)
+            .put("final", "remote")
 
         // Only add DNS routing rules for rule-based modes
         if (routingMode == RoutingMode.RULE_BASED) {
@@ -128,6 +145,27 @@ object ConfigGenerator {
         }
 
         return dns
+    }
+
+    private fun buildDnsServer(
+        tag: String,
+        dns: String,
+        detour: String? = null,
+        resolverTag: String? = null
+    ): JSONObject {
+        val spec = parseDnsServer(dns)
+        return JSONObject()
+            .put("type", spec.type)
+            .put("tag", tag)
+            .put("server", spec.server)
+            .put("server_port", spec.serverPort)
+            .apply {
+                detour?.let { put("detour", it) }
+                spec.path?.let { put("path", it) }
+                if (!isIpLiteral(spec.server)) {
+                    put("domain_resolver", resolverTag ?: "bootstrap")
+                }
+            }
     }
 
     private fun normalizeRemoteDnsAddress(remoteDns: String, enableDoh: Boolean): String {
@@ -154,6 +192,85 @@ object ConfigGenerator {
             }
             else -> trimmed
         }
+    }
+
+    private fun normalizeLocalDnsAddress(localDns: String): String {
+        val trimmed = localDns.trim()
+        return if (trimmed.isBlank()) "223.5.5.5" else trimmed
+    }
+
+    private fun parseDnsServer(dns: String): DnsServerSpec {
+        val trimmed = dns.trim()
+        return when {
+            trimmed.startsWith("https://") -> {
+                val uri = URI(trimmed)
+                val server = uri.host?.takeIf { it.isNotBlank() }
+                    ?: trimmed.removePrefix("https://").substringBefore('/').substringBefore(':')
+                DnsServerSpec(
+                    type = "https",
+                    server = server,
+                    serverPort = if (uri.port > 0) uri.port else 443,
+                    path = uri.rawPath?.takeIf { it.isNotBlank() } ?: "/dns-query"
+                )
+            }
+
+            trimmed.startsWith("tls://") -> {
+                val (server, port) = parseHostAndPort(trimmed.removePrefix("tls://"), 853)
+                DnsServerSpec("tls", server, port)
+            }
+
+            trimmed.startsWith("tcp://") -> {
+                val (server, port) = parseHostAndPort(trimmed.removePrefix("tcp://"), 53)
+                DnsServerSpec("tcp", server, port)
+            }
+
+            trimmed.startsWith("udp://") -> {
+                val (server, port) = parseHostAndPort(trimmed.removePrefix("udp://"), 53)
+                DnsServerSpec("udp", server, port)
+            }
+
+            trimmed.startsWith("quic://") -> {
+                val (server, port) = parseHostAndPort(trimmed.removePrefix("quic://"), 853)
+                DnsServerSpec("quic", server, port)
+            }
+
+            else -> {
+                val (server, port) = parseHostAndPort(trimmed, 53)
+                DnsServerSpec("udp", server, port)
+            }
+        }
+    }
+
+    private fun parseHostAndPort(raw: String, defaultPort: Int): Pair<String, Int> {
+        val value = raw.trim()
+        val parsed = runCatching { URI("dns://$value") }.getOrNull()
+        val host = parsed?.host?.takeIf { it.isNotBlank() }
+        if (host != null) {
+            val port = if (parsed.port > 0) parsed.port else defaultPort
+            return host to port
+        }
+
+        if (value.count { it == ':' } == 1 && !value.startsWith("[")) {
+            val separator = value.lastIndexOf(':')
+            val port = value.substring(separator + 1).toIntOrNull()
+            if (port != null) {
+                return value.substring(0, separator) to port
+            }
+        }
+
+        return value.removePrefix("[").removeSuffix("]") to defaultPort
+    }
+
+    private fun isIpLiteral(server: String): Boolean {
+        val normalized = server.removePrefix("[").removeSuffix("]")
+        val ipv4 = normalized.split(".")
+            .takeIf { it.size == 4 }
+            ?.all { octet -> octet.toIntOrNull()?.let { it in 0..255 } == true }
+            == true
+        if (ipv4) return true
+
+        return normalized.contains(':') &&
+            normalized.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
     }
 
     // ── Inbounds ─────────────────────────────────────────────────────
