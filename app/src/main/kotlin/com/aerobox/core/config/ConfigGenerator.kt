@@ -163,21 +163,22 @@ object ConfigGenerator {
         enableIPv6: Boolean = true
     ): JSONArray {
         val inbounds = JSONArray()
+        val tunAddresses = JSONArray()
+            .put("172.19.0.1/30")
+        if (enableIPv6) {
+            tunAddresses.put("fdfe:dcba:9876::1/126")
+        }
 
         // TUN (always present)
         val tunInbound = JSONObject()
             .put("type", "tun")
+            .put("tag", "tun-in")
             .put("interface_name", "tun0")
-            .put("inet4_address", JSONArray().put("172.19.0.1/30"))
+            .put("address", tunAddresses)
             .put("mtu", 9000)
             .put("auto_route", true)
             .put("strict_route", true)
-            .put("stack", "mixed")
-            .put("sniff", true)
-
-        if (enableIPv6) {
-            tunInbound.put("inet6_address", JSONArray().put("fdfe:dcba:9876::1/126"))
-        }
+            .put("stack", "system")
 
         inbounds.put(tunInbound)
 
@@ -240,22 +241,13 @@ object ConfigGenerator {
                 route.put("final", "proxy")
                 route.put(
                     "rules",
-                    JSONArray().put(
-                        JSONObject()
-                            .put("protocol", "dns")
-                            .put("action", "hijack-dns")
-                    )
+                    buildBaseRouteRules()
                 )
             }
 
             RoutingMode.RULE_BASED -> {
                 route.put("final", "proxy")
-                val rules = JSONArray()
-                    .put(
-                        JSONObject()
-                            .put("protocol", "dns")
-                            .put("action", "hijack-dns")
-                    )
+                val rules = buildBaseRouteRules()
 
                 if (enableGeoBlockQuic) {
                     rules.put(
@@ -300,11 +292,7 @@ object ConfigGenerator {
                 route.put("final", "direct")
                 route.put(
                     "rules",
-                    JSONArray().put(
-                        JSONObject()
-                            .put("protocol", "dns")
-                            .put("action", "hijack-dns")
-                    )
+                    buildBaseRouteRules()
                 )
             }
 
@@ -319,6 +307,19 @@ object ConfigGenerator {
             .put("type", "local")
             .put("format", "binary")
             .put("path", path)
+    }
+
+    private fun buildBaseRouteRules(): JSONArray {
+        return JSONArray()
+            .put(
+                JSONObject()
+                    .put("action", "sniff")
+            )
+            .put(
+                JSONObject()
+                    .put("protocol", "dns")
+                    .put("action", "hijack-dns")
+            )
     }
 
     // ── Proxy Outbound ───────────────────────────────────────────────

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,7 +79,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 64.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+        contentPadding = PaddingValues(top = 120.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -99,6 +100,10 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         }
 
         item {
+            Spacer(modifier = Modifier.height(28.dp))
+        }
+
+        item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -109,12 +114,12 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
                     nodeAddress = selectedNode?.type?.displayName() ?: "--",
                     onClick = { showNodeList = true },
-                    modifier = Modifier.weight(0.42f).fillMaxHeight()
+                    modifier = Modifier.weight(0.5f).fillMaxHeight()
                 )
                 NetworkDetectCard(
                     ip = detectedIp,
                     onClick = { viewModel.refreshNetworkInfo() },
-                    modifier = Modifier.weight(0.58f).fillMaxHeight()
+                    modifier = Modifier.weight(0.5f).fillMaxHeight()
                 )
             }
         }
@@ -129,11 +134,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                 RoutingModeColumn(
                     selected = routingMode,
                     onSelect = { viewModel.setRoutingMode(it) },
-                    modifier = Modifier.weight(0.42f).fillMaxHeight()
+                    modifier = Modifier.weight(0.5f).fillMaxHeight()
                 )
                 TrafficStatsCard(
                     stats = trafficStats,
-                    modifier = Modifier.weight(0.58f).fillMaxHeight()
+                    modifier = Modifier.weight(0.5f).fillMaxHeight()
                 )
             }
         }
