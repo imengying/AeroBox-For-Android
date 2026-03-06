@@ -263,10 +263,11 @@ object ConfigGenerator {
 
     private fun isIpLiteral(server: String): Boolean {
         val normalized = server.removePrefix("[").removeSuffix("]")
-        val ipv4 = normalized.split(".")
-            .takeIf { it.size == 4 }
-            ?.all { octet -> octet.toIntOrNull()?.let { it in 0..255 } == true }
-            == true
+        val ipv4 = normalized.split(".").let { octets ->
+            octets.size == 4 && octets.all { octet ->
+                octet.toIntOrNull()?.let { it in 0..255 } == true
+            }
+        }
         if (ipv4) return true
 
         return normalized.contains(':') &&
