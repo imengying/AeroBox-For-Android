@@ -85,7 +85,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             ConnectionCard(
                 isConnected = vpnState.isConnected,
                 nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
-                nodeAddress = selectedNode?.type?.name ?: "--",
+                nodeAddress = selectedNode?.type?.displayName() ?: "--",
                 connectionDuration = connectionDuration,
                 onToggleConnection = {
                     val permissionIntent = viewModel.toggleConnection(context)
@@ -93,15 +93,30 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         permissionLauncher.launch(permissionIntent)
                     }
                 },
-                onNodeNameClick = { showNodeList = true }
+                onNodeNameClick = { showNodeList = true },
+                showNodeSelector = false
             )
         }
 
         item {
-            NetworkDetectCard(
-                ip = detectedIp,
-                onClick = { viewModel.refreshNetworkInfo() }
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                NodeSelectorCard(
+                    nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
+                    nodeAddress = selectedNode?.type?.displayName() ?: "--",
+                    onClick = { showNodeList = true },
+                    modifier = Modifier.weight(0.42f).fillMaxHeight()
+                )
+                NetworkDetectCard(
+                    ip = detectedIp,
+                    onClick = { viewModel.refreshNetworkInfo() },
+                    modifier = Modifier.weight(0.58f).fillMaxHeight()
+                )
+            }
         }
 
         item {
@@ -114,11 +129,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                 RoutingModeColumn(
                     selected = routingMode,
                     onSelect = { viewModel.setRoutingMode(it) },
-                    modifier = Modifier.weight(0.35f).fillMaxHeight()
+                    modifier = Modifier.weight(0.42f).fillMaxHeight()
                 )
                 TrafficStatsCard(
                     stats = trafficStats,
-                    modifier = Modifier.weight(0.65f).fillMaxHeight()
+                    modifier = Modifier.weight(0.58f).fillMaxHeight()
                 )
             }
         }
@@ -198,10 +213,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 @Composable
 private fun NetworkDetectCard(
     ip: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
@@ -222,6 +238,45 @@ private fun NetworkDetectCard(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NodeSelectorCard(
+    nodeName: String,
+    nodeAddress: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = nodeName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = nodeAddress,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp)

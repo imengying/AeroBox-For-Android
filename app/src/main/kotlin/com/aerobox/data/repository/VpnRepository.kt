@@ -2,7 +2,6 @@ package com.aerobox.data.repository
 
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.core.geo.GeoAssetManager
@@ -16,10 +15,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class VpnRepository(private val context: Context) {
-    private companion object {
-        private const val TAG = "VpnRepository"
-    }
-
     val isRunning: StateFlow<Boolean> = AeroBoxVpnService.isRunning
 
     fun startVpn(config: String, nodeId: Long? = null) {
@@ -68,7 +63,7 @@ class VpnRepository(private val context: Context) {
         val enableGeoAdsBlock = PreferenceManager.enableGeoAdsBlockFlow(context).first()
         val enableGeoBlockQuic = PreferenceManager.enableGeoBlockQuicFlow(context).first()
 
-        val geoIpPath = if (enableGeoRules) {
+        val geoIpCnRuleSetPath = if (enableGeoRules) {
             GeoAssetManager
                 .getGeoIpFile(context)
                 .takeIf { it.exists() && it.length() > 0L }
@@ -76,7 +71,7 @@ class VpnRepository(private val context: Context) {
         } else {
             null
         }
-        val geoSitePath = if (enableGeoRules) {
+        val geoSiteCnRuleSetPath = if (enableGeoRules) {
             GeoAssetManager
                 .getGeoSiteFile(context)
                 .takeIf { it.exists() && it.length() > 0L }
@@ -84,8 +79,16 @@ class VpnRepository(private val context: Context) {
         } else {
             null
         }
+        val geoSiteAdsRuleSetPath = if (enableGeoRules) {
+            GeoAssetManager
+                .getGeoAdsFile(context)
+                .takeIf { it.exists() && it.length() > 0L }
+                ?.absolutePath
+        } else {
+            null
+        }
 
-        val configWithGeo = ConfigGenerator.generateSingBoxConfig(
+        return ConfigGenerator.generateSingBoxConfig(
             node = node,
             routingMode = routingMode,
             remoteDns = remoteDns,
@@ -98,38 +101,9 @@ class VpnRepository(private val context: Context) {
             enableGeoCnIpRule = enableGeoRules && enableGeoCnIpRule,
             enableGeoAdsBlock = enableGeoRules && enableGeoAdsBlock,
             enableGeoBlockQuic = enableGeoRules && enableGeoBlockQuic,
-            geoipPath = geoIpPath,
-            geositePath = geoSitePath
+            geoIpCnRuleSetPath = geoIpCnRuleSetPath,
+            geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
+            geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
-
-        val geoError = checkConfig(configWithGeo)
-        if (geoError != null && isGeoConfigError(geoError)) {
-            Log.w(TAG, "Geo rules invalid, fallback to no-geo config: $geoError")
-            return ConfigGenerator.generateSingBoxConfig(
-                node = node,
-                routingMode = routingMode,
-                remoteDns = remoteDns,
-                localDns = localDns,
-                enableDoh = enableDoh,
-                enableSocksInbound = enableSocksInbound,
-                enableHttpInbound = enableHttpInbound,
-                enableIPv6 = enableIPv6,
-                enableGeoCnDomainRule = false,
-                enableGeoCnIpRule = false,
-                enableGeoAdsBlock = false,
-                enableGeoBlockQuic = false,
-                geoipPath = null,
-                geositePath = null
-            )
-        }
-
-        return configWithGeo
-    }
-
-    private fun isGeoConfigError(error: String): Boolean {
-        val msg = error.lowercase()
-        return msg.contains("geosite") ||
-                msg.contains("geoip") ||
-                (msg.contains("router") && msg.contains("rule") && msg.contains("database"))
     }
 }

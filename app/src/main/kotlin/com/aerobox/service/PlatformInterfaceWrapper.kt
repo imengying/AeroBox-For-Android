@@ -2,7 +2,6 @@ package com.aerobox.service
 
 import android.annotation.SuppressLint
 import android.net.NetworkCapabilities
-import android.os.Build
 import android.os.Process
 import android.util.Log
 import io.nekohasekai.libbox.ConnectionOwner
@@ -38,7 +37,7 @@ interface PlatformInterfaceWrapper : PlatformInterface {
         error("openTun not implemented — must be overridden by VpnService")
     }
 
-    override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+    override fun useProcFS(): Boolean = false
 
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -49,15 +48,11 @@ interface PlatformInterfaceWrapper : PlatformInterface {
     ): ConnectionOwner {
         try {
             val connectivity = AeroBoxApplication.connectivity
-            val uid = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                connectivity.getConnectionOwnerUid(
-                    ipProtocol,
-                    InetSocketAddress(sourceAddress, sourcePort),
-                    InetSocketAddress(destinationAddress, destinationPort),
-                )
-            } else {
-                Process.INVALID_UID
-            }
+            val uid = connectivity.getConnectionOwnerUid(
+                ipProtocol,
+                InetSocketAddress(sourceAddress, sourcePort),
+                InetSocketAddress(destinationAddress, destinationPort),
+            )
             if (uid == Process.INVALID_UID) error("android: connection owner not found")
             val packages = AeroBoxApplication.appInstance.packageManager.getPackagesForUid(uid)
             val owner = ConnectionOwner()

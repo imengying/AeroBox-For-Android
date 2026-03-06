@@ -110,11 +110,38 @@ object ClashParser {
         }
 
         val network = map["network"] ?: map["net"] ?: when {
-            map.containsKey("ws-opts") || map.containsKey("ws-path") -> "ws"
-            map.containsKey("grpc-opts") || map.containsKey("grpc-service-name") -> "grpc"
-            map.containsKey("h2-opts") -> "h2"
+            map.containsKey("ws-opts-path") || map.containsKey("ws-opts-headers-Host") || map.containsKey("ws-path") -> "ws"
+            map.containsKey("grpc-opts-grpc-service-name") || map.containsKey("grpc-service-name") -> "grpc"
+            map.containsKey("h2-opts-path") || map.containsKey("h2-opts-host") -> "h2"
+            map.containsKey("http-opts-path") || map.containsKey("http-opts-host") || map.containsKey("http-opts-headers-Host") -> "http"
+            map.containsKey("http-upgrade-path") || map.containsKey("http-upgrade-host") -> "httpupgrade"
             else -> null
         }
+        val normalizedNetwork = normalizeNetwork(network)
+        val transportPath = firstNonBlank(
+            map["ws-opts-path"],
+            map["ws-path"],
+            map["h2-opts-path"],
+            map["http-opts-path"],
+            map["http-upgrade-path"],
+            map["path"]
+        )
+        val transportHost = firstNonBlank(
+            map["ws-opts-headers-Host"],
+            map["ws-opts-host"],
+            map["h2-opts-host"],
+            map["http-opts-host"],
+            map["http-opts-headers-Host"],
+            map["http-upgrade-host"],
+            map["host"]
+        )
+        val transportServiceName = firstNonBlank(
+            map["grpc-opts-grpc-service-name"],
+            map["grpc-service-name"],
+            map["service-name"],
+            map["serviceName"],
+            if (normalizedNetwork == "grpc") transportPath else null
+        )
 
         return ProxyNode(
             name = name,
@@ -126,9 +153,12 @@ object ClashParser {
             method = map["cipher"] ?: map["method"],
             flow = map["flow"],
             security = map["security"],
-            network = network,
+            network = normalizedNetwork,
             tls = tls,
             sni = map["sni"] ?: map["servername"],
+            transportHost = transportHost,
+            transportPath = if (normalizedNetwork == "grpc") null else transportPath,
+            transportServiceName = transportServiceName,
             alpn = map["alpn"],
             fingerprint = map["fingerprint"] ?: map["client-fingerprint"],
             publicKey = map["public-key"] ?: map["pbk"],
@@ -149,8 +179,7 @@ object ClashParser {
 
     private fun parseSimpleYamlMap(yaml: String): Map<String, String> {
         val map = mutableMapOf<String, String>()
-        var currentParentKey: String? = null
-        var parentIndent = -1
+        val parentStack = mutableListOf<Pair<Int, String>>()
 
         for (line in yaml.lines()) {
             val trimmed = line.trimStart()
@@ -162,11 +191,14 @@ object ClashParser {
 
             val key = trimmed.substring(0, colonIndex).trim()
             val rawValue = trimmed.substring(colonIndex + 1).trim()
+            while (parentStack.isNotEmpty() && indent <= parentStack.last().first) {
+                parentStack.removeAt(parentStack.lastIndex)
+            }
 
             // Detect nested block start (key with no value, e.g. "ws-opts:")
             if (rawValue.isEmpty()) {
-                currentParentKey = key
-                parentIndent = indent
+                val prefix = (parentStack.lastOrNull()?.second?.let { "$it-$key" } ?: key)
+                parentStack.add(indent to prefix)
                 continue
             }
 
@@ -178,14 +210,23 @@ object ClashParser {
                     it.removeSurrounding("[", "]").split(",").joinToString(",") { s -> s.trim().removeSurrounding("\"").removeSurrounding("'") }
                 } else it }
 
-            if (currentParentKey != null && indent > parentIndent) {
-                // This is a child of the nested block → flatten
-                map["$currentParentKey-$key"] = cleanValue
-            } else {
-                currentParentKey = null
-                map[key] = cleanValue
-            }
+            val parentPrefix = parentStack.lastOrNull()?.second
+            val mapKey = parentPrefix?.let { "$it-$key" } ?: key
+            map[mapKey] = cleanValue
         }
         return map
+    }
+
+    private fun normalizeNetwork(value: String?): String? {
+        val normalized = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+        return when (normalized) {
+            "websocket" -> "ws"
+            "http-upgrade" -> "httpupgrade"
+            else -> normalized
+        }
+    }
+
+    private fun firstNonBlank(vararg values: String?): String? {
+        return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
     }
 }

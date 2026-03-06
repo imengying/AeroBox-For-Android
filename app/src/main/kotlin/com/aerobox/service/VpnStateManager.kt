@@ -17,6 +17,7 @@ object VpnStateManager {
             currentNode = if (isConnected) node else null,
             connectionTime = if (isConnected) System.currentTimeMillis() else 0L
         )
+        AeroBoxTileService.requestRefresh()
     }
 
     fun updateTrafficStats(

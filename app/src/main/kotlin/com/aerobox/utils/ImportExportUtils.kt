@@ -75,6 +75,11 @@ object ImportExportUtils {
                     .put("net", node.network ?: "tcp")
                     .put("tls", if (node.tls) "tls" else "")
                     .put("sni", node.sni ?: "")
+                node.transportHost?.let { json.put("host", it) }
+                when (node.network?.lowercase()) {
+                    "grpc" -> node.transportServiceName?.let { json.put("serviceName", it) }
+                    else -> node.transportPath?.let { json.put("path", it) }
+                }
                 val encoded = android.util.Base64.encodeToString(
                     json.toString().toByteArray(),
                     android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
@@ -86,6 +91,9 @@ object ImportExportUtils {
                     append("security=${node.security ?: "none"}")
                     node.network?.let { append("&type=$it") }
                     node.sni?.let { append("&sni=$it") }
+                    node.transportHost?.let { append("&host=$it") }
+                    node.transportPath?.let { append("&path=${Uri.encode(it)}") }
+                    node.transportServiceName?.let { append("&serviceName=${Uri.encode(it)}") }
                     node.fingerprint?.let { append("&fp=$it") }
                     node.flow?.let { append("&flow=$it") }
                     node.publicKey?.let { append("&pbk=$it") }
@@ -94,7 +102,13 @@ object ImportExportUtils {
                 "vless://${node.uuid}@${node.server}:${node.port}?$params#${Uri.encode(node.name)}"
             }
             ProxyType.TROJAN -> {
-                val params = node.sni?.let { "sni=$it" } ?: ""
+                val params = buildList {
+                    node.sni?.let { add("sni=$it") }
+                    node.network?.let { add("type=$it") }
+                    node.transportHost?.let { add("host=$it") }
+                    node.transportPath?.let { add("path=${Uri.encode(it)}") }
+                    node.transportServiceName?.let { add("serviceName=${Uri.encode(it)}") }
+                }.joinToString("&")
                 "trojan://${node.password}@${node.server}:${node.port}?$params#${Uri.encode(node.name)}"
             }
             ProxyType.HYSTERIA2 -> {
@@ -131,6 +145,10 @@ object ImportExportUtils {
             node.uuid?.let { obj.put("uuid", it) }
             node.password?.let { obj.put("password", it) }
             node.method?.let { obj.put("method", it) }
+            node.network?.let { obj.put("network", it) }
+            node.transportHost?.let { obj.put("host", it) }
+            node.transportPath?.let { obj.put("path", it) }
+            node.transportServiceName?.let { obj.put("service_name", it) }
             array.put(obj)
         }
         return array.toString(2)

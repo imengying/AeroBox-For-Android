@@ -10,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,13 +25,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val EXTRA_ACTION = "action"
         const val ACTION_TOGGLE_VPN = "toggle_vpn"
-        const val ACTION_QS_TILE_PREFERENCES = "android.service.quicksettings.action.QS_TILE_PREFERENCES"
-        const val MAIN_PAGE_HOME = 0
-        const val MAIN_PAGE_SETTINGS = 1
     }
-
-    private var initialMainPage = mutableIntStateOf(MAIN_PAGE_HOME)
-    private var openMainRouteToken = mutableIntStateOf(0)
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -47,7 +40,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        applyEntryIntent(intent)
 
         setContent {
             val context = LocalContext.current
@@ -66,10 +58,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = useDarkTheme,
                 dynamicColor = dynamicColor
             ) {
-                AppNavigation(
-                    initialMainPage = initialMainPage.intValue,
-                    openMainRouteToken = openMainRouteToken.intValue
-                )
+                AppNavigation()
             }
         }
 
@@ -79,17 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        applyEntryIntent(intent)
         consumeActionIntent(intent)
-    }
-
-    private fun applyEntryIntent(intent: Intent?) {
-        if (intent?.action == ACTION_QS_TILE_PREFERENCES) {
-            initialMainPage.intValue = MAIN_PAGE_SETTINGS
-            openMainRouteToken.intValue += 1
-        } else {
-            initialMainPage.intValue = MAIN_PAGE_HOME
-        }
     }
 
     private fun consumeActionIntent(intent: Intent?) {

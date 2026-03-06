@@ -15,11 +15,11 @@ import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 /**
- * Manages GeoIP and GeoSite database files used by sing-box for rule-based routing.
- * Strategy:
- * 1) Prefer bundled assets in APK (assets/sing-box/<name>.db.xz + <name>.version.txt)
- * 2) Extract/update bundled files based on version
- * 3) Allow manual online update from GitHub releases
+ * Manages bundled and updated sing-box rule-set assets.
+ * We keep a small official subset aligned with the current UI toggles:
+ * - geoip-cn.srs
+ * - geosite-cn.srs
+ * - geosite-category-ads-all.srs
  */
 object GeoAssetManager {
 
@@ -27,14 +27,20 @@ object GeoAssetManager {
 
     private const val GEOIP_REPO = "SagerNet/sing-geoip"
     private const val GEOSITE_REPO = "SagerNet/sing-geosite"
-    private const val GEOIP_URL = "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db"
-    private const val GEOSITE_URL = "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db"
+
+    private const val GEOIP_CN_URL =
+        "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+    private const val GEOSITE_CN_URL =
+        "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
+    private const val GEOSITE_ADS_URL =
+        "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
 
     private const val ASSET_PREFIX = "sing-box/"
     private const val CUSTOM_VERSION = "Custom"
 
-    private const val GEOIP_FILE = "geoip.db"
-    private const val GEOSITE_FILE = "geosite.db"
+    private const val GEOIP_CN_FILE = "geoip-cn.srs"
+    private const val GEOSITE_CN_FILE = "geosite-cn.srs"
+    private const val GEOSITE_ADS_FILE = "geosite-category-ads-all.srs"
     private const val GEOIP_VERSION_FILE = "geoip.version.txt"
     private const val GEOSITE_VERSION_FILE = "geosite.version.txt"
 
@@ -44,91 +50,77 @@ object GeoAssetManager {
         .followRedirects(true)
         .build()
 
-    /**
-     * Get the local path for the geo database files.
-     */
     fun getGeoDir(context: Context): File {
         val dir = File(context.filesDir, "geo")
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
-    fun getGeoIpFile(context: Context): File = File(getGeoDir(context), GEOIP_FILE)
-    fun getGeoSiteFile(context: Context): File = File(getGeoDir(context), GEOSITE_FILE)
+    fun getGeoIpFile(context: Context): File = File(getGeoDir(context), GEOIP_CN_FILE)
+    fun getGeoSiteFile(context: Context): File = File(getGeoDir(context), GEOSITE_CN_FILE)
+    fun getGeoAdsFile(context: Context): File = File(getGeoDir(context), GEOSITE_ADS_FILE)
+
     private fun getGeoIpVersionFile(context: Context): File = File(getGeoDir(context), GEOIP_VERSION_FILE)
     private fun getGeoSiteVersionFile(context: Context): File = File(getGeoDir(context), GEOSITE_VERSION_FILE)
 
-    /**
-     * Check whether both geo database files exist locally.
-     */
     fun hasLocalFiles(context: Context): Boolean {
-        return getGeoIpFile(context).exists() && getGeoSiteFile(context).exists()
+        return getGeoIpFile(context).exists() &&
+            getGeoSiteFile(context).exists() &&
+            getGeoAdsFile(context).exists()
     }
 
-    /**
-     * Get file sizes for display (returns "X.X MB" strings).
-     */
     fun getGeoIpSize(context: Context): String = formatFileSize(getGeoIpFile(context))
     fun getGeoSiteSize(context: Context): String = formatFileSize(getGeoSiteFile(context))
+    fun getGeoAdsSize(context: Context): String = formatFileSize(getGeoAdsFile(context))
 
-    /**
-     * Get last modified time of geo files.
-     */
     fun getGeoIpLastModified(context: Context): Long = getGeoIpFile(context).lastModified()
-    fun getGeoSiteLastModified(context: Context): Long = getGeoSiteFile(context).lastModified()
+    fun getGeoSiteLastModified(context: Context): Long = maxOf(
+        getGeoSiteFile(context).lastModified(),
+        getGeoAdsFile(context).lastModified()
+    )
 
-    /**
-     * Download or update GeoIP database.
-     * Returns true on success, false on failure.
-     */
     suspend fun updateGeoIp(context: Context): Boolean = withContext(Dispatchers.IO) {
-        val ok = downloadFile(GEOIP_URL, getGeoIpFile(context))
+        val ok = downloadFile(GEOIP_CN_URL, getGeoIpFile(context))
         if (ok) {
             writeVersionFile(getGeoIpVersionFile(context), fetchLatestReleaseTag(GEOIP_REPO))
         }
         ok
     }
 
-    /**
-     * Download or update GeoSite database.
-     * Returns true on success, false on failure.
-     */
     suspend fun updateGeoSite(context: Context): Boolean = withContext(Dispatchers.IO) {
-        val ok = downloadFile(GEOSITE_URL, getGeoSiteFile(context))
+        val cnOk = downloadFile(GEOSITE_CN_URL, getGeoSiteFile(context))
+        val adsOk = downloadFile(GEOSITE_ADS_URL, getGeoAdsFile(context))
+        val ok = cnOk && adsOk
         if (ok) {
             writeVersionFile(getGeoSiteVersionFile(context), fetchLatestReleaseTag(GEOSITE_REPO))
         }
         ok
     }
 
-    /**
-     * Update both databases.
-     */
     suspend fun updateAll(context: Context): Boolean {
         val ip = updateGeoIp(context)
         val site = updateGeoSite(context)
         return ip && site
     }
 
-    /**
-     * Ensure bundled assets (if present in APK) are extracted/upgraded to local files.
-     * Similar to NekoBox strategy:
-     * - extract when local file missing
-     * - official assets can overwrite older local versions
-     * - local version marked as "Custom" will not be overwritten
-     */
     @Synchronized
     fun ensureBundledAssets(context: Context, useOfficialAssets: Boolean = true) {
         runCatching {
             ensureBundledAsset(
                 context = context,
-                fileName = GEOIP_FILE,
+                fileName = GEOIP_CN_FILE,
                 versionFileName = GEOIP_VERSION_FILE,
                 useOfficialAssets = useOfficialAssets
             )
             ensureBundledAsset(
                 context = context,
-                fileName = GEOSITE_FILE,
+                fileName = GEOSITE_CN_FILE,
+                versionFileName = GEOSITE_VERSION_FILE,
+                useOfficialAssets = useOfficialAssets
+            )
+            ensureBundledAsset(
+                context = context,
+                fileName = GEOSITE_ADS_FILE,
                 versionFileName = GEOSITE_VERSION_FILE,
                 useOfficialAssets = useOfficialAssets
             )
@@ -150,7 +142,6 @@ object GeoAssetManager {
                 }
             }
 
-            // Atomic rename
             if (tmpFile.exists() && tmpFile.length() > 0) {
                 target.delete()
                 tmpFile.renameTo(target)
@@ -284,7 +275,7 @@ object GeoAssetManager {
         if (!file.exists()) return "未下载"
         val sizeBytes = file.length()
         return when {
-            sizeBytes < 1024 -> "$sizeBytes B"
+            sizeBytes < 1024 -> "${sizeBytes} B"
             sizeBytes < 1024 * 1024 -> "%.1f KB".format(sizeBytes / 1024.0)
             else -> "%.1f MB".format(sizeBytes / (1024.0 * 1024.0))
         }

@@ -1,6 +1,5 @@
 package com.aerobox.ui.screens
 
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -184,17 +183,15 @@ fun SettingsScreen(
 
         // ── Appearance ──
         item { SectionHeader(title = stringResource(R.string.appearance)) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            item {
-                SettingItem(
-                    icon = { Icon(AppIcons.ColorLens, contentDescription = null) },
-                    title = stringResource(R.string.dynamic_color),
-                    supporting = stringResource(R.string.android_12_plus),
-                    trailing = {
-                        Switch(checked = dynamicColor, onCheckedChange = { scope.launch { viewModel.setDynamicColor(it) } })
-                    }
-                )
-            }
+        item {
+            SettingItem(
+                icon = { Icon(AppIcons.ColorLens, contentDescription = null) },
+                title = stringResource(R.string.dynamic_color),
+                supporting = "使用系统动态取色",
+                trailing = {
+                    Switch(checked = dynamicColor, onCheckedChange = { scope.launch { viewModel.setDynamicColor(it) } })
+                }
+            )
         }
         item {
             SettingItem(

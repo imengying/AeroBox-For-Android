@@ -13,11 +13,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     env:
-      SING_BOX_VERSION: v1.13.0
       ANDROID_NDK_VERSION: 28.2.13676358
       # Neko-style slim profile: keep core modern protocols, drop heavy optional modules
       LIBBOX_BUILD_TAGS: with_quic,with_wireguard,with_utls
-      GOMOBILE_TOOLCHAIN: go1.22.12
+      GOMOBILE_TOOLCHAIN: go1.24.10
 
     steps:
       - name: Checkout
@@ -50,6 +49,39 @@ jobs:
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
           echo "AEROBOX_ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Resolve latest stable sing-box release
+        run: |
+          set -euo pipefail
+
+          get_latest_release() {
+            curl --silent "https://api.github.com/repos/$1/releases/latest" \
+              | grep '"tag_name":' \
+              | sed -E 's/.*"([^"]+)".*/\1/'
+          }
+
+          SING_BOX_VERSION="$(get_latest_release "SagerNet/sing-box")"
+          if [ -z "${SING_BOX_VERSION}" ]; then
+            echo "Failed to resolve sing-box version." >&2
+            exit 1
+          fi
+
+          GO_MOD_URL="https://raw.githubusercontent.com/SagerNet/sing-box/${SING_BOX_VERSION}/go.mod"
+          GOMOBILE_TOOLCHAIN="$(
+            curl -fLSs "${GO_MOD_URL}" \
+              | awk '
+                  /^toolchain go/ { print $2; exit }
+                  /^go / { print "go" $2; exit }
+                '
+          )"
+          if [ -z "${GOMOBILE_TOOLCHAIN}" ]; then
+            echo "Failed to resolve Go toolchain from ${GO_MOD_URL}." >&2
+            exit 1
+          fi
+
+          echo "SING_BOX_VERSION=${SING_BOX_VERSION}" >> "${GITHUB_ENV}"
+          echo "GOMOBILE_TOOLCHAIN=${GOMOBILE_TOOLCHAIN}" >> "${GITHUB_ENV}"
+          echo "Using sing-box ${SING_BOX_VERSION} with ${GOMOBILE_TOOLCHAIN}"
 
       - name: Build libbox.aar
         run: |
@@ -210,7 +242,7 @@ jobs:
           echo "AEROBOX_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
           echo "AEROBOX_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
 
-      - name: Prepare bundled GeoIP/GeoSite assets
+      - name: Prepare bundled routing rule-set assets
         run: |
           set -euo pipefail
           ASSET_DIR="${GITHUB_WORKSPACE}/app/src/main/assets/sing-box"
@@ -233,12 +265,17 @@ jobs:
           echo -n "${GEOIP_TAG}" > "${ASSET_DIR}/geoip.version.txt"
           echo -n "${GEOSITE_TAG}" > "${ASSET_DIR}/geosite.version.txt"
 
-          curl -fLSs "https://github.com/SagerNet/sing-geoip/releases/download/${GEOIP_TAG}/geoip.db" -o "${ASSET_DIR}/geoip.db"
-          curl -fLSs "https://github.com/SagerNet/sing-geosite/releases/download/${GEOSITE_TAG}/geosite.db" -o "${ASSET_DIR}/geosite.db"
-          xz -z -9 -f "${ASSET_DIR}/geoip.db"
-          xz -z -9 -f "${ASSET_DIR}/geosite.db"
+          curl -fLSs "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs" \
+            -o "${ASSET_DIR}/geoip-cn.srs"
+          curl -fLSs "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs" \
+            -o "${ASSET_DIR}/geosite-cn.srs"
+          curl -fLSs "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs" \
+            -o "${ASSET_DIR}/geosite-category-ads-all.srs"
+          xz -z -9 -f "${ASSET_DIR}/geoip-cn.srs"
+          xz -z -9 -f "${ASSET_DIR}/geosite-cn.srs"
+          xz -z -9 -f "${ASSET_DIR}/geosite-category-ads-all.srs"
 
-          echo "Bundled geo assets:"
+          echo "Bundled routing assets:"
           ls -lh "${ASSET_DIR}"
 
       - name: Switch to JDK 21 (Android build)

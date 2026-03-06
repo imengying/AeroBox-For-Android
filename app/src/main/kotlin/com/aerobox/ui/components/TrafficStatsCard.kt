@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aerobox.data.model.TrafficStats
 import com.aerobox.utils.NetworkUtils
@@ -31,7 +33,7 @@ fun TrafficStatsCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f)
         )
@@ -42,11 +44,19 @@ fun TrafficStatsCard(
             // Speed row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SpeedItem(label = "↑", value = NetworkUtils.formatSpeed(stats.uploadSpeed))
-                SpeedItem(label = "↓", value = NetworkUtils.formatSpeed(stats.downloadSpeed))
+                SpeedItem(
+                    label = "↑",
+                    value = NetworkUtils.formatSpeed(stats.uploadSpeed),
+                    modifier = Modifier.weight(1f)
+                )
+                SpeedItem(
+                    label = "↓",
+                    value = NetworkUtils.formatSpeed(stats.downloadSpeed),
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             // Totals row
@@ -54,17 +64,24 @@ fun TrafficStatsCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "总上传 ${NetworkUtils.formatBytes(stats.totalUpload)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "总下载 ${NetworkUtils.formatBytes(stats.totalDownload)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f),
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -72,8 +89,15 @@ fun TrafficStatsCard(
 }
 
 @Composable
-private fun SpeedItem(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun SpeedItem(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.titleLarge,
@@ -85,7 +109,9 @@ private fun SpeedItem(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

@@ -117,7 +117,7 @@ fun RoutingSettingsScreen(
                     RoutingSettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "中国域名规则",
-                        supporting = "geosite:cn",
+                        supporting = "rule_set: geosite-cn",
                         trailing = {
                             Switch(
                                 checked = enableGeoCnDomainRule,
@@ -130,7 +130,7 @@ fun RoutingSettingsScreen(
                     RoutingSettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "中国 IP 规则",
-                        supporting = "geoip:cn",
+                        supporting = "rule_set: geoip-cn",
                         trailing = {
                             Switch(
                                 checked = enableGeoCnIpRule,
@@ -143,7 +143,7 @@ fun RoutingSettingsScreen(
                     RoutingSettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "屏蔽广告",
-                        supporting = "geosite:category-ads-all",
+                        supporting = "rule_set: geosite-category-ads-all",
                         trailing = {
                             Switch(
                                 checked = enableGeoAdsBlock,
@@ -159,6 +159,7 @@ fun RoutingSettingsScreen(
                 val hasFiles = GeoAssetManager.hasLocalFiles(context)
                 val geoIpSize = GeoAssetManager.getGeoIpSize(context)
                 val geoSiteSize = GeoAssetManager.getGeoSiteSize(context)
+                val geoAdsSize = GeoAssetManager.getGeoAdsSize(context)
                 RoutingSettingItem(
                     modifier = Modifier.clickable {
                         if (!geoUpdating) {
@@ -175,7 +176,7 @@ fun RoutingSettingsScreen(
                     icon = { Icon(AppIcons.Security, contentDescription = null) },
                     title = if (hasFiles) "更新路由资源" else "下载路由资源",
                     supporting = if (hasFiles) {
-                        "GeoIP: $geoIpSize · GeoSite: $geoSiteSize（官方源）"
+                        "中国 IP: $geoIpSize · 中国域名: $geoSiteSize · 广告: $geoAdsSize（官方源）"
                     } else {
                         "仅使用官方源 SagerNet"
                     },

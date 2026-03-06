@@ -2,6 +2,7 @@ package com.aerobox.data.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.util.Locale
 
 enum class ProxyType {
     SHADOWSOCKS,
@@ -13,7 +14,18 @@ enum class ProxyType {
     TUIC,
     WIREGUARD,
     SOCKS,
-    HTTP
+    HTTP;
+
+    fun displayName(): String {
+        return name
+            .lowercase(Locale.ROOT)
+            .split('_')
+            .joinToString(" ") { token ->
+                token.replaceFirstChar { ch ->
+                    if (ch.isLowerCase()) ch.titlecase(Locale.ROOT) else ch.toString()
+                }
+            }
+    }
 }
 
 @Entity(tableName = "proxy_nodes")
@@ -31,6 +43,9 @@ data class ProxyNode(
     val network: String? = null,
     val tls: Boolean = false,
     val sni: String? = null,
+    val transportHost: String? = null,
+    val transportPath: String? = null,
+    val transportServiceName: String? = null,
     val alpn: String? = null,
     val fingerprint: String? = null,
     val publicKey: String? = null,

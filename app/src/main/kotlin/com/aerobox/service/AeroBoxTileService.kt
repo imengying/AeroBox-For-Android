@@ -1,5 +1,6 @@
 package com.aerobox.service
 
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.net.VpnService
@@ -25,6 +26,16 @@ class AeroBoxTileService : TileService() {
 
     companion object {
         private const val TAG = "AeroBoxTileService"
+
+        fun requestRefresh() {
+            runCatching {
+                val context = com.aerobox.AeroBoxApplication.appInstance
+                requestListeningState(
+                    context,
+                    ComponentName(context, AeroBoxTileService::class.java)
+                )
+            }
+        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -121,12 +132,10 @@ class AeroBoxTileService : TileService() {
         } else {
             getString(R.string.tile_label)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = if (active) {
-                getString(R.string.tile_action_open)
-            } else {
-                getString(R.string.tile_action_close)
-            }
+        tile.subtitle = if (active) {
+            getString(R.string.tile_action_close)
+        } else {
+            getString(R.string.tile_action_open)
         }
         tile.updateTile()
     }

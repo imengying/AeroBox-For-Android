@@ -22,12 +22,14 @@ object ConfigGenerator {
         enableGeoCnIpRule: Boolean = true,
         enableGeoAdsBlock: Boolean = true,
         enableGeoBlockQuic: Boolean = true,
-        geoipPath: String? = null,
-        geositePath: String? = null
+        geoIpCnRuleSetPath: String? = null,
+        geoSiteCnRuleSetPath: String? = null,
+        geoSiteAdsRuleSetPath: String? = null
     ): String {
         val config = JSONObject()
-        val hasGeoSite = !geositePath.isNullOrBlank()
-        val hasGeoIp = !geoipPath.isNullOrBlank()
+        val hasGeoSiteCn = !geoSiteCnRuleSetPath.isNullOrBlank()
+        val hasGeoIpCn = !geoIpCnRuleSetPath.isNullOrBlank()
+        val hasGeoAds = !geoSiteAdsRuleSetPath.isNullOrBlank()
 
         config.put(
             "log",
@@ -43,7 +45,7 @@ object ConfigGenerator {
                 localDns = localDns,
                 enableDoh = enableDoh,
                 routingMode = routingMode,
-                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSite
+                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSiteCn
             )
         )
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
@@ -54,19 +56,18 @@ object ConfigGenerator {
             JSONArray()
                 .put(proxyOutbound)
                 .put(JSONObject().put("type", "direct").put("tag", "direct"))
-                .put(JSONObject().put("type", "block").put("tag", "block"))
-                .put(JSONObject().put("type", "dns").put("tag", "dns-out"))
         )
 
         config.put(
             "route",
             buildRoute(
                 routingMode = routingMode,
-                geoipPath = geoipPath,
-                geositePath = geositePath,
-                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSite,
-                enableGeoCnIpRule = enableGeoCnIpRule && hasGeoIp,
-                enableGeoAdsBlock = enableGeoAdsBlock && hasGeoSite,
+                geoIpCnRuleSetPath = geoIpCnRuleSetPath,
+                geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
+                geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath,
+                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSiteCn,
+                enableGeoCnIpRule = enableGeoCnIpRule && hasGeoIpCn,
+                enableGeoAdsBlock = enableGeoAdsBlock && hasGeoAds,
                 enableGeoBlockQuic = enableGeoBlockQuic
             )
         )
@@ -113,7 +114,7 @@ object ConfigGenerator {
             fun addDnsLocalRule(country: String) {
                 dnsRules.put(
                     JSONObject()
-                        .put("geosite", country)
+                        .put("rule_set", JSONArray().put("geosite-$country"))
                         .put("server", "local")
                 )
             }
@@ -209,8 +210,9 @@ object ConfigGenerator {
 
     private fun buildRoute(
         routingMode: RoutingMode,
-        geoipPath: String? = null,
-        geositePath: String? = null,
+        geoIpCnRuleSetPath: String? = null,
+        geoSiteCnRuleSetPath: String? = null,
+        geoSiteAdsRuleSetPath: String? = null,
         enableGeoCnDomainRule: Boolean = true,
         enableGeoCnIpRule: Boolean = true,
         enableGeoAdsBlock: Boolean = true,
@@ -219,12 +221,18 @@ object ConfigGenerator {
         val route = JSONObject()
             .put("auto_detect_interface", true)
 
-        // Set geo database paths so sing-box can locate the local .db files
-        if (!geoipPath.isNullOrBlank()) {
-            route.put("geoip", JSONObject().put("path", geoipPath))
+        val ruleSets = JSONArray()
+        if (!geoIpCnRuleSetPath.isNullOrBlank()) {
+            ruleSets.put(buildLocalRuleSet("geoip-cn", geoIpCnRuleSetPath))
         }
-        if (!geositePath.isNullOrBlank()) {
-            route.put("geosite", JSONObject().put("path", geositePath))
+        if (!geoSiteCnRuleSetPath.isNullOrBlank()) {
+            ruleSets.put(buildLocalRuleSet("geosite-cn", geoSiteCnRuleSetPath))
+        }
+        if (!geoSiteAdsRuleSetPath.isNullOrBlank()) {
+            ruleSets.put(buildLocalRuleSet("geosite-category-ads-all", geoSiteAdsRuleSetPath))
+        }
+        if (ruleSets.length() > 0) {
+            route.put("rule_set", ruleSets)
         }
 
         when (routingMode) {
@@ -235,7 +243,7 @@ object ConfigGenerator {
                     JSONArray().put(
                         JSONObject()
                             .put("protocol", "dns")
-                            .put("outbound", "dns-out")
+                            .put("action", "hijack-dns")
                     )
                 )
             }
@@ -246,7 +254,7 @@ object ConfigGenerator {
                     .put(
                         JSONObject()
                             .put("protocol", "dns")
-                            .put("outbound", "dns-out")
+                            .put("action", "hijack-dns")
                     )
 
                 if (enableGeoBlockQuic) {
@@ -254,14 +262,14 @@ object ConfigGenerator {
                         JSONObject()
                             .put("network", JSONArray().put("udp"))
                             .put("port", JSONArray().put(443))
-                            .put("outbound", "block")
+                            .put("action", "reject")
                     )
                 }
 
                 if (enableGeoCnDomainRule) {
                     rules.put(
                         JSONObject()
-                            .put("geosite", JSONArray().put("cn"))
+                            .put("rule_set", JSONArray().put("geosite-cn"))
                             .put("outbound", "direct")
                     )
                 }
@@ -269,7 +277,7 @@ object ConfigGenerator {
                 if (enableGeoCnIpRule) {
                     rules.put(
                         JSONObject()
-                            .put("geoip", JSONArray().put("cn"))
+                            .put("rule_set", JSONArray().put("geoip-cn"))
                             .put("outbound", "direct")
                     )
                 }
@@ -277,8 +285,8 @@ object ConfigGenerator {
                 if (enableGeoAdsBlock) {
                     rules.put(
                         JSONObject()
-                            .put("geosite", JSONArray().put("category-ads-all"))
-                            .put("outbound", "block")
+                            .put("rule_set", JSONArray().put("geosite-category-ads-all"))
+                            .put("action", "reject")
                     )
                 }
 
@@ -295,7 +303,7 @@ object ConfigGenerator {
                     JSONArray().put(
                         JSONObject()
                             .put("protocol", "dns")
-                            .put("outbound", "dns-out")
+                            .put("action", "hijack-dns")
                     )
                 )
             }
@@ -303,6 +311,14 @@ object ConfigGenerator {
         }
 
         return route
+    }
+
+    private fun buildLocalRuleSet(tag: String, path: String): JSONObject {
+        return JSONObject()
+            .put("tag", tag)
+            .put("type", "local")
+            .put("format", "binary")
+            .put("path", path)
     }
 
     // ── Proxy Outbound ───────────────────────────────────────────────
@@ -447,23 +463,45 @@ object ConfigGenerator {
         when (node.network?.lowercase()) {
             "ws", "websocket" -> {
                 transport.put("type", "ws")
-                // Use sni as host fallback if no explicit host
-                node.sni?.let { transport.put("headers", JSONObject().put("Host", it)) }
+                normalizedTransportPath(node.transportPath)?.let { transport.put("path", it) }
+                firstTransportHost(node)?.let { transport.put("headers", JSONObject().put("Host", it)) }
             }
             "grpc" -> {
                 transport.put("type", "grpc")
+                node.transportServiceName?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("service_name", it)
+                }
             }
             "h2", "http" -> {
                 transport.put("type", "http")
-                node.sni?.let {
-                    transport.put("host", JSONArray().put(it))
+                normalizedTransportPath(node.transportPath)?.let { transport.put("path", it) }
+                firstTransportHost(node)?.let { hostValue ->
+                    val hostArray = JSONArray()
+                    hostValue.split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .forEach { hostArray.put(it) }
+                    if (hostArray.length() > 0) {
+                        transport.put("host", hostArray)
+                    }
                 }
             }
-            "httpupgrade" -> {
+            "httpupgrade", "http-upgrade" -> {
                 transport.put("type", "httpupgrade")
-                node.sni?.let { transport.put("host", it) }
+                normalizedTransportPath(node.transportPath)?.let { transport.put("path", it) }
+                firstTransportHost(node)?.let { transport.put("host", it) }
             }
         }
         return transport
+    }
+
+    private fun firstTransportHost(node: ProxyNode): String? {
+        return node.transportHost?.takeIf { it.isNotBlank() }
+            ?: node.sni?.takeIf { it.isNotBlank() }
+    }
+
+    private fun normalizedTransportPath(path: String?): String? {
+        val value = path?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return if (value.startsWith("/")) value else "/$value"
     }
 }

@@ -37,7 +37,7 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 
 enum class ConnectionFixAction(val label: String) {
-    UPDATE_GEO("更新 Geo 资源"),
+    UPDATE_GEO("更新路由资源"),
     SWITCH_GLOBAL_MODE("切换为全局模式"),
     REFRESH_SUBSCRIPTIONS("重新拉取订阅")
 }
@@ -401,10 +401,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return when {
             msg.contains("geosite") ||
                     msg.contains("geoip") ||
+                    msg.contains("rule_set") ||
+                    msg.contains("rule-set") ||
+                    msg.contains(".srs") ||
                     (msg.contains("router") && msg.contains("database")) -> {
                 ConnectionIssue(
-                    title = "Geo 规则资源异常",
-                    message = "检测到 GeoIP/GeoSite 数据库不可用或格式不兼容。",
+                    title = "路由资源异常",
+                    message = "检测到官方路由规则集不可用或格式不兼容。",
                     rawError = rawError,
                     fixAction = ConnectionFixAction.UPDATE_GEO
                 )

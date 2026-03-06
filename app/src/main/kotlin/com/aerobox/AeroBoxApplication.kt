@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.net.ConnectivityManager
-import android.os.Build
 import androidx.room.Room
 import com.aerobox.data.database.AppDatabase
 import com.aerobox.core.geo.GeoAssetManager
@@ -28,8 +27,6 @@ class AeroBoxApplication : Application() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             "AeroBox",
@@ -54,7 +51,9 @@ class AeroBoxApplication : Application() {
                 _appInstance,
                 AppDatabase::class.java,
                 "aerobox.db"
-            ).fallbackToDestructiveMigrationOnDowngrade().build()
+            )
+                .fallbackToDestructiveMigration()
+                .build()
         }
     }
 }

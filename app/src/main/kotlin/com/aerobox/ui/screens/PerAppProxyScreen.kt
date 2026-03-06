@@ -170,7 +170,7 @@ fun PerAppProxyScreen(
                         
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             onClick = { toggleSelection() }
                         ) {

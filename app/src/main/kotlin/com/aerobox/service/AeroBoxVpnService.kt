@@ -258,12 +258,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         VpnStateManager.updateConnectionState(false, null)
         VpnStateManager.resetStats()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     // ─── CommandServerHandler callbacks ───
@@ -316,9 +311,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             .setSession("AeroBox")
             .setMtu(options.mtu)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            builder.setMetered(false)
-        }
+        builder.setMetered(false)
 
         // IPv4 addresses
         val inet4Address = options.inet4Address
@@ -392,8 +385,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         val connectedNode = runBlocking {
             resolveCurrentNode(null)
         }
-        VpnStateManager.updateConnectionState(true, connectedNode)
         _isRunning.value = true
+        VpnStateManager.updateConnectionState(true, connectedNode)
         val notification = buildNotification(connected = true)
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         nm.notify(NOTIFICATION_ID, notification)

@@ -2,12 +2,12 @@ package com.aerobox.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val FallbackDarkPrimary = Color(0xFF82B1FF)
-val FallbackDarkBackground = Color(0xFF121212)
-val FallbackDarkSurface = Color(0xFF1E1E1E)
-val FallbackDarkSecondaryContainer = Color(0xFF004F58)
-val FallbackDarkTertiaryContainer = Color(0xFF255025)
+val FallbackDarkPrimary = Color(0xFFAEC6FF)
+val FallbackDarkBackground = Color(0xFF111418)
+val FallbackDarkSurface = Color(0xFF111418)
+val FallbackDarkSecondaryContainer = Color(0xFF3E4759)
+val FallbackDarkTertiaryContainer = Color(0xFF5B3F5B)
 
-val FallbackLightPrimary = Color(0xFF1976D2)
-val FallbackLightBackground = Color(0xFFFFFBFE)
-val FallbackLightSurface = Color(0xFFFFFBFE)
+val FallbackLightPrimary = Color(0xFF385E9D)
+val FallbackLightBackground = Color(0xFFF9F9FF)
+val FallbackLightSurface = Color(0xFFF9F9FF)

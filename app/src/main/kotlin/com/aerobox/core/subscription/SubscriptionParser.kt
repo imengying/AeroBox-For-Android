@@ -119,6 +119,8 @@ object SubscriptionParser {
         val name = json.optString("ps", "VMess")
         val server = json.optString("add")
         val port = json.optString("port").toIntOrNull() ?: return null
+        val network = normalizeNetwork(json.optString("net", "tcp"))
+        val rawPath = json.optString("path").ifBlank { null }
 
         return ProxyNode(
             name = name,
@@ -127,9 +129,13 @@ object SubscriptionParser {
             port = port,
             uuid = json.optString("id").ifBlank { null },
             security = json.optString("scy", json.optString("security", "auto")),
-            network = json.optString("net", "tcp"),
+            network = network,
             tls = json.optString("tls").equals("tls", true),
-            sni = json.optString("sni").ifBlank { null }
+            sni = json.optString("sni").ifBlank { null },
+            transportHost = json.optString("host").ifBlank { null },
+            transportPath = if (network == "grpc") null else rawPath,
+            transportServiceName = json.optString("serviceName", json.optString("service_name", ""))
+                .ifBlank { if (network == "grpc") rawPath else null }
         )
     }
 
@@ -139,6 +145,7 @@ object SubscriptionParser {
         val server = parsed.host ?: return null
         val port = parsed.port.takeIf { it > 0 } ?: return null
         val params = parseUriParams(parsed.query)
+        val network = normalizeNetwork(params["type"] ?: params["network"])
 
         return ProxyNode(
             name = decodeName(parsed.fragment ?: "VLESS"),
@@ -148,9 +155,20 @@ object SubscriptionParser {
             uuid = userInfo,
             flow = params["flow"],
             security = params["security"],
-            network = params["type"] ?: params["network"],
+            network = network,
             tls = params["security"].equals("tls", true) || params["security"].equals("reality", true),
             sni = params["sni"],
+            transportHost = firstNonBlank(params["host"], params["authority"]),
+            transportPath = if (network == "grpc") {
+                null
+            } else {
+                params["path"]
+            },
+            transportServiceName = firstNonBlank(
+                params["serviceName"],
+                params["service_name"],
+                if (network == "grpc") params["path"] else null
+            ),
             alpn = params["alpn"],
             fingerprint = params["fp"],
             publicKey = params["pbk"],
@@ -163,6 +181,7 @@ object SubscriptionParser {
         val server = parsed.host ?: return null
         val port = parsed.port.takeIf { it > 0 } ?: return null
         val params = parseUriParams(parsed.query)
+        val network = normalizeNetwork(params["type"] ?: params["network"])
 
         return ProxyNode(
             name = decodeName(parsed.fragment ?: "Trojan"),
@@ -171,7 +190,19 @@ object SubscriptionParser {
             port = port,
             password = extractUserInfo(parsed),
             tls = true,
-            sni = params["sni"]
+            sni = params["sni"],
+            network = network,
+            transportHost = firstNonBlank(params["host"], params["authority"]),
+            transportPath = if (network == "grpc") {
+                null
+            } else {
+                params["path"]
+            },
+            transportServiceName = firstNonBlank(
+                params["serviceName"],
+                params["service_name"],
+                if (network == "grpc") params["path"] else null
+            )
         )
     }
 
@@ -240,6 +271,7 @@ object SubscriptionParser {
         val result = mutableListOf<ProxyNode>()
         for (index in 0 until array.length()) {
             val obj = array.optJSONObject(index) ?: continue
+            val transport = obj.optJSONObject("transport")
             val typeRaw = obj.optString("type", obj.optString("protocol", "")).lowercase()
             val type = when {
                 typeRaw.contains("shadow") -> {
@@ -260,6 +292,11 @@ object SubscriptionParser {
             val server = obj.optString("server", obj.optString("address", ""))
             val port = obj.optInt("server_port", obj.optInt("port", -1))
             if (server.isBlank() || port <= 0) continue
+            val network = normalizeNetwork(
+                obj.optString("network", obj.optString("net", "")).ifBlank {
+                    transport?.optString("type", "")?.ifBlank { null }
+                }
+            )
 
             result += ProxyNode(
                 name = obj.optString("name", obj.optString("ps", type.name)),
@@ -271,9 +308,32 @@ object SubscriptionParser {
                 method = obj.optString("method", "").ifBlank { null },
                 flow = obj.optString("flow", "").ifBlank { null },
                 security = obj.optString("security", "").ifBlank { null },
-                network = obj.optString("network", obj.optString("net", "")).ifBlank { null },
+                network = network,
                 tls = obj.optBoolean("tls", false),
                 sni = obj.optString("sni", "").ifBlank { null },
+                transportHost = firstNonBlank(
+                    obj.optString("host", "").ifBlank { null },
+                    transport?.optString("host", "")?.ifBlank { null },
+                    transport?.optJSONObject("headers")?.optString("Host", "")?.ifBlank { null },
+                    transport?.optJSONArray("host")?.toCommaSeparatedString()
+                ),
+                transportPath = firstNonBlank(
+                    obj.optString("path", "").ifBlank { null },
+                    transport?.optString("path", "")?.ifBlank { null }
+                ),
+                transportServiceName = firstNonBlank(
+                    obj.optString("service_name", obj.optString("serviceName", "")).ifBlank { null },
+                    transport?.optString("service_name", "")?.ifBlank { null },
+                    transport?.optString("serviceName", "")?.ifBlank { null },
+                    if (network == "grpc") {
+                        firstNonBlank(
+                            obj.optString("path", "").ifBlank { null },
+                            transport?.optString("path", "")?.ifBlank { null }
+                        )
+                    } else {
+                        null
+                    }
+                ),
                 alpn = obj.optString("alpn", "").ifBlank { null },
                 fingerprint = obj.optString("fingerprint", obj.optString("fp", "")).ifBlank { null },
                 publicKey = obj.optString("public_key", obj.optString("pbk", "")).ifBlank { null },
@@ -339,6 +399,28 @@ object SubscriptionParser {
                 key to value
             }
             .toMap()
+    }
+
+    private fun normalizeNetwork(value: String?): String? {
+        val normalized = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+        return when (normalized) {
+            "websocket" -> "ws"
+            "http-upgrade" -> "httpupgrade"
+            else -> normalized
+        }
+    }
+
+    private fun firstNonBlank(vararg values: String?): String? {
+        return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun JSONArray.toCommaSeparatedString(): String? {
+        val values = buildList {
+            for (i in 0 until length()) {
+                optString(i).trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+            }
+        }
+        return values.takeIf { it.isNotEmpty() }?.joinToString(",")
     }
 
     private fun tryBase64Decode(value: String): String {
