@@ -360,8 +360,7 @@ object ConfigGenerator {
             .put("mtu", 9000)
             .put("auto_route", true)
             .put("strict_route", true)
-            .put("endpoint_independent_nat", true)
-            .put("stack", "mixed")
+            .put("stack", "system")
 
         inbounds.put(tunInbound)
 
@@ -403,7 +402,6 @@ object ConfigGenerator {
         enableGeoBlockQuic: Boolean = true
     ): JSONObject {
         val route = JSONObject()
-            .put("auto_detect_interface", true)
             .put("default_domain_resolver", "local")
 
         val ruleSets = JSONArray()
