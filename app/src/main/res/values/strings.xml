@@ -23,7 +23,6 @@
     <string name="dynamic_color">动态配色</string>
     <string name="connection_settings">连接设置</string>
     <string name="auto_connect">自动连接</string>
-    <string name="auto_update_subscription">自动更新订阅</string>
     <string name="about">关于</string>
     <string name="version">版本</string>
     <string name="open_source_licenses">开源许可</string>
@@ -36,7 +35,6 @@
     <string name="subscription_url">订阅链接</string>
     <string name="notification_title">AeroBox</string>
     <string name="notification_connecting">正在连接...</string>
-    <string name="notification_connected">已连接</string>
     <string name="notification_action_switch">切换</string>
     <string name="notification_action_stop">停止</string>
     <string name="hint_add_subscription">请先添加订阅以获取节点配置</string>

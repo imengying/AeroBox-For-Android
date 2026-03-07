@@ -324,66 +324,15 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
         if (options.autoRoute) {
             builder.addDnsServer(options.dnsServerAddress.value)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val inet4Routes = mutableListOf<Pair<String, Int>>()
-                val inet4RouteAddress = options.inet4RouteAddress
-                while (inet4RouteAddress.hasNext()) {
-                    val route = inet4RouteAddress.next()
-                    inet4Routes.add(route.address() to route.prefix())
-                }
-                if (inet4Routes.isNotEmpty()) {
-                    inet4Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
-                } else {
-                    builder.addRoute("0.0.0.0", 0)
-                }
-
-                val inet6Routes = mutableListOf<Pair<String, Int>>()
-                val inet6RouteAddress = options.inet6RouteAddress
-                while (inet6RouteAddress.hasNext()) {
-                    val route = inet6RouteAddress.next()
-                    inet6Routes.add(route.address() to route.prefix())
-                }
-                if (inet6Routes.isNotEmpty()) {
-                    inet6Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
-                } else if (inet6Addresses.isNotEmpty()) {
-                    builder.addRoute("::", 0)
-                }
-                RuntimeLogBuffer.append(
-                    "debug",
-                    "Tun DNS=${options.dnsServerAddress.value}, ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
-                        "ipv4Routes=${inet4Routes.size}, ipv6Routes=${inet6Routes.size}"
-                )
-            } else {
-                val inet4Routes = mutableListOf<Pair<String, Int>>()
-                val inet4RouteRange = options.inet4RouteRange
-                while (inet4RouteRange.hasNext()) {
-                    val route = inet4RouteRange.next()
-                    inet4Routes.add(route.address() to route.prefix())
-                }
-                if (inet4Routes.isNotEmpty()) {
-                    inet4Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
-                } else {
-                    builder.addRoute("0.0.0.0", 0)
-                }
-
-                val inet6Routes = mutableListOf<Pair<String, Int>>()
-                val inet6RouteRange = options.inet6RouteRange
-                while (inet6RouteRange.hasNext()) {
-                    val route = inet6RouteRange.next()
-                    inet6Routes.add(route.address() to route.prefix())
-                }
-                if (inet6Routes.isNotEmpty()) {
-                    inet6Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
-                } else if (inet6Addresses.isNotEmpty()) {
-                    builder.addRoute("::", 0)
-                }
-                RuntimeLogBuffer.append(
-                    "debug",
-                    "Tun DNS=${options.dnsServerAddress.value}, ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
-                        "ipv4Routes=${inet4Routes.size}, ipv6Routes=${inet6Routes.size}"
-                )
+            builder.addRoute("0.0.0.0", 0)
+            if (inet6Addresses.isNotEmpty()) {
+                builder.addRoute("::", 0)
             }
+            RuntimeLogBuffer.append(
+                "debug",
+                "Tun DNS=${options.dnsServerAddress.value}, ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
+                    "forcedDefaultRoutes=true"
+            )
         }
 
         // Per-app proxy from OverrideOptions (handled by libbox include/exclude)
@@ -411,7 +360,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 connectedNode?.name?.takeIf { it.isNotBlank() }?.let { " for $it" } ?: ""
             )
         )
-        val notification = buildNotification(connected = true)
+        val initialSpeedText = "↑ 0 B/s  ↓ 0 B/s"
+        val notification = buildNotification(contentText = initialSpeedText, connected = true)
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         nm.notify(NOTIFICATION_ID, notification)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
@@ -479,21 +429,17 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         } else {
             getString(R.string.notification_title)
         }
-        val statusText = if (connected) {
-            getString(R.string.notification_connected)
-        } else {
-            getString(R.string.notification_connecting)
-        }
         val mergedContent = when {
-            contentText.isBlank() -> statusText
-            connected && contentText != statusText -> "$statusText · $contentText"
+            connected && contentText.isNotBlank() -> contentText
+            connected -> "↑ 0 B/s  ↓ 0 B/s"
+            contentText.isBlank() -> getString(R.string.notification_connecting)
             else -> contentText
         }
 
         val builder = NotificationCompat.Builder(this, AeroBoxApplication.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(mergedContent)
-            .setSubText(statusText)
+            .setSubText(null)
             .setSmallIcon(R.drawable.ic_stat_aerobox)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

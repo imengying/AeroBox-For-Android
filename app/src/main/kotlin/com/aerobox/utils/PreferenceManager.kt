@@ -18,7 +18,6 @@ object PreferenceManager {
     private val DARK_MODE = stringPreferencesKey("dark_mode")
     private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     private val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
-    private val AUTO_UPDATE_SUBSCRIPTION = booleanPreferencesKey("auto_update_subscription")
     private val LAST_SELECTED_NODE_ID = longPreferencesKey("last_selected_node_id")
 
     // Phase 2: Routing & Network
@@ -49,9 +48,6 @@ object PreferenceManager {
 
     fun autoConnectFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_CONNECT] ?: false }
-
-    fun autoUpdateSubscriptionFlow(context: Context): Flow<Boolean> =
-        context.dataStore.data.map { it[AUTO_UPDATE_SUBSCRIPTION] ?: false }
 
     fun lastSelectedNodeIdFlow(context: Context): Flow<Long> =
         context.dataStore.data.map { it[LAST_SELECTED_NODE_ID] ?: -1L }
@@ -120,10 +116,6 @@ object PreferenceManager {
 
     suspend fun setAutoConnect(context: Context, enabled: Boolean) {
         context.dataStore.edit { it[AUTO_CONNECT] = enabled }
-    }
-
-    suspend fun setAutoUpdateSubscription(context: Context, enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_UPDATE_SUBSCRIPTION] = enabled }
     }
 
     suspend fun setLastSelectedNodeId(context: Context, nodeId: Long) {

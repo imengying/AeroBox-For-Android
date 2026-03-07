@@ -207,13 +207,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching {
                 VpnStateManager.clearLastError()
-                val autoUpdateSubscription = PreferenceManager
-                    .autoUpdateSubscriptionFlow(appContext)
-                    .first()
-                if (autoUpdateSubscription) {
-                    val subscriptions = subscriptionRepository.getAllSubscriptions().first()
-                    subscriptionRepository.refreshDueSubscriptions(subscriptions)
-                }
+                val subscriptions = subscriptionRepository.getAllSubscriptions().first()
+                subscriptionRepository.refreshDueSubscriptions(subscriptions)
 
                 val config = vpnRepository.buildConfig(node)
                 val configError = vpnRepository.checkConfig(config)

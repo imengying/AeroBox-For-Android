@@ -25,12 +25,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 if (!autoConnect) return@runCatching
                 if (android.net.VpnService.prepare(context) != null) return@runCatching
 
-                val autoUpdateSubscription = PreferenceManager.autoUpdateSubscriptionFlow(context).first()
-                if (autoUpdateSubscription) {
-                    val subscriptionRepository = SubscriptionRepository(context)
-                    val subscriptions = subscriptionRepository.getAllSubscriptions().first()
-                    subscriptionRepository.refreshDueSubscriptions(subscriptions)
-                }
+                val subscriptionRepository = SubscriptionRepository(context)
+                val subscriptions = subscriptionRepository.getAllSubscriptions().first()
+                subscriptionRepository.refreshDueSubscriptions(subscriptions)
 
                 val nodeId = PreferenceManager.lastSelectedNodeIdFlow(context).first()
                 if (nodeId <= 0L) return@runCatching

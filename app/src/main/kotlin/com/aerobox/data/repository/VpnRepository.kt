@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
 
 class VpnRepository(private val context: Context) {
     val isRunning: StateFlow<Boolean> = AeroBoxVpnService.isRunning
@@ -128,7 +130,7 @@ class VpnRepository(private val context: Context) {
             null
         }
 
-        return ConfigGenerator.generateSingBoxConfig(
+        val config = ConfigGenerator.generateSingBoxConfig(
             node = node,
             routingMode = routingMode,
             remoteDns = remoteDns,
@@ -145,5 +147,46 @@ class VpnRepository(private val context: Context) {
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
+        dumpGeneratedConfig(node, config)
+        return config
+    }
+
+    private suspend fun dumpGeneratedConfig(node: ProxyNode, config: String) {
+        withContext(Dispatchers.IO) {
+            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+            val debugDir = File(baseDir, "debug").apply { mkdirs() }
+            val safeName = node.name
+                .ifBlank { "node" }
+                .replace(Regex("[^\\p{L}\\p{N}._-]+"), "_")
+                .trim('_')
+                .ifBlank { "node" }
+
+            val latestFile = File(debugDir, "last-sing-box.json")
+            val nodeFile = File(debugDir, "last-sing-box-$safeName.json")
+            latestFile.writeText(config)
+            nodeFile.writeText(config)
+
+            RuntimeLogBuffer.append("debug", "Config dumped: ${latestFile.absolutePath}")
+            RuntimeLogBuffer.append("debug", "Config node dump: ${nodeFile.absolutePath}")
+
+            runCatching { JSONObject(config) }.getOrNull()?.let { root ->
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Config dns: ${root.optJSONObject(\"dns\")?.toString() ?: \"{}\"}"
+                )
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Config inbound[0]: ${root.optJSONArray(\"inbounds\")?.optJSONObject(0)?.toString() ?: \"{}\"}"
+                )
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Config outbound[0]: ${root.optJSONArray(\"outbounds\")?.optJSONObject(0)?.toString() ?: \"{}\"}"
+                )
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Config route: ${root.optJSONObject(\"route\")?.toString() ?: \"{}\"}"
+                )
+            }
+        }
     }
 }

@@ -56,7 +56,6 @@ fun SettingsScreen(
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
-    val autoUpdateSubscription by viewModel.autoUpdateSubscription.collectAsStateWithLifecycle()
     val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
     val remoteDns by viewModel.remoteDns.collectAsStateWithLifecycle()
     val localDns by viewModel.localDns.collectAsStateWithLifecycle()
@@ -234,19 +233,6 @@ fun SettingsScreen(
                 supporting = "开机后自动连接",
                 trailing = {
                     Switch(checked = autoConnect, onCheckedChange = { scope.launch { viewModel.setAutoConnect(it) } })
-                }
-            )
-        }
-        item {
-            SettingItem(
-                icon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
-                title = stringResource(R.string.auto_update_subscription),
-                supporting = "连接时自动更新订阅",
-                trailing = {
-                    Switch(
-                        checked = autoUpdateSubscription,
-                        onCheckedChange = { scope.launch { viewModel.setAutoUpdateSubscription(it) } }
-                    )
                 }
             )
         }

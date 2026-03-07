@@ -91,9 +91,10 @@ object ConfigGenerator {
         routingMode: RoutingMode,
         enableGeoCnDomainRule: Boolean
     ): JSONObject {
-        val bootstrapServer = JSONObject()
-            .put("type", "local")
-            .put("tag", "bootstrap")
+        val bootstrapServer = buildDnsServer(
+            tag = "bootstrap",
+            dns = "1.1.1.1"
+        )
 
         val localServer = buildDnsServer(
             tag = "local",
@@ -238,7 +239,7 @@ object ConfigGenerator {
 
     private fun normalizeLocalDnsAddress(localDns: String): String {
         val trimmed = localDns.trim()
-        return if (trimmed.isBlank()) "223.5.5.5" else trimmed
+        return if (trimmed.isBlank()) "https://dns.alidns.com/dns-query" else trimmed
     }
 
     private fun parseDnsServer(dns: String): DnsServerSpec {
@@ -404,7 +405,7 @@ object ConfigGenerator {
     ): JSONObject {
         val route = JSONObject()
             .put("auto_detect_interface", true)
-            .put("default_domain_resolver", "local")
+            .put("default_domain_resolver", "bootstrap")
 
         val ruleSets = JSONArray()
         if (!geoIpCnRuleSetPath.isNullOrBlank()) {
