@@ -58,7 +58,7 @@ fun TrafficStatsCard(
                         title = stringResource(R.string.upload),
                         prefix = "↑",
                         speed = NetworkUtils.formatSpeed(stats.uploadSpeed),
-                        total = NetworkUtils.formatBytes(stats.totalUpload),
+                        total = NetworkUtils.formatBytesCompact(stats.totalUpload),
                         modifier = Modifier.weight(1f)
                     )
                     Box(
@@ -74,7 +74,7 @@ fun TrafficStatsCard(
                         title = stringResource(R.string.download),
                         prefix = "↓",
                         speed = NetworkUtils.formatSpeed(stats.downloadSpeed),
-                        total = NetworkUtils.formatBytes(stats.totalDownload),
+                        total = NetworkUtils.formatBytesCompact(stats.totalDownload),
                         modifier = Modifier.weight(1f)
                     )
                 }
