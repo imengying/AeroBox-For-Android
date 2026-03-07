@@ -19,8 +19,16 @@ class VpnRepository(private val context: Context) {
     val isRunning: StateFlow<Boolean> = AeroBoxVpnService.isRunning
 
     fun startVpn(config: String, nodeId: Long? = null) {
+        startServiceWithAction(AeroBoxVpnService.ACTION_START, config, nodeId)
+    }
+
+    fun switchNode(config: String, nodeId: Long? = null) {
+        startServiceWithAction(AeroBoxVpnService.ACTION_SWITCH, config, nodeId)
+    }
+
+    private fun startServiceWithAction(action: String, config: String, nodeId: Long? = null) {
         val intent = Intent(context, AeroBoxVpnService::class.java).apply {
-            action = AeroBoxVpnService.ACTION_START
+            this.action = action
             putExtra(AeroBoxVpnService.EXTRA_CONFIG, config)
             if (nodeId != null && nodeId > 0L) {
                 putExtra(AeroBoxVpnService.EXTRA_NODE_ID, nodeId)

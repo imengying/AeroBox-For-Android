@@ -131,6 +131,23 @@ class SubscriptionRepository(context: Context) {
         )
     }
 
+    suspend fun updateSubscriptionDetails(
+        subscription: Subscription,
+        name: String,
+        url: String,
+        autoUpdate: Boolean,
+        updateInterval: Long
+    ) {
+        subscriptionDao.update(
+            subscription.copy(
+                name = name,
+                url = url,
+                autoUpdate = autoUpdate,
+                updateInterval = normalizeUpdateInterval(updateInterval)
+            )
+        )
+    }
+
     suspend fun refreshAllSubscriptions(subscriptions: List<Subscription>) {
         subscriptions.forEach { subscription ->
             runCatching { updateSubscription(subscription) }

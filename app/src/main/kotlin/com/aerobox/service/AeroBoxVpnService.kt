@@ -51,6 +51,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     companion object {
         const val ACTION_START = "com.aerobox.action.START"
         const val ACTION_STOP = "com.aerobox.action.STOP"
+        const val ACTION_SWITCH = "com.aerobox.action.SWITCH"
         const val EXTRA_CONFIG = "extra_config"
         const val EXTRA_NODE_ID = "extra_node_id"
         const val NOTIFICATION_ID = 1001
@@ -70,6 +71,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
+    private var pendingSwitchConfig: String? = null
+    private var pendingSwitchNodeId: Long = -1L
 
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -92,14 +95,55 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 val nodeId = intent.getLongExtra(EXTRA_NODE_ID, -1L)
                 userRequestedStop = false
                 reconnectAttempts = 0
+                pendingSwitchConfig = null
+                pendingSwitchNodeId = -1L
                 lastConfig = config
                 if (nodeId > 0L) {
                     lastNodeId = nodeId
                 }
                 startVpn(config)
             }
+            ACTION_SWITCH -> {
+                val config = intent.getStringExtra(EXTRA_CONFIG).orEmpty()
+                val nodeId = intent.getLongExtra(EXTRA_NODE_ID, -1L)
+                if (config.isBlank()) {
+                    RuntimeLogBuffer.append("warn", "Ignoring node switch: empty config")
+                    return START_STICKY
+                }
+                userRequestedStop = false
+                reconnectAttempts = 0
+                pendingSwitchConfig = config
+                pendingSwitchNodeId = nodeId
+                if (commandServer != null && (_isRunning.value || vpnInterface != null)) {
+                    RuntimeLogBuffer.append("info", "Switching node: restarting service")
+                    runCatching { commandServer?.closeService() }
+                        .onFailure {
+                            RuntimeLogBuffer.append(
+                                "warn",
+                                "Switch restart failed, falling back to reload: ${it.message ?: it}"
+                            )
+                            pendingSwitchConfig = null
+                            pendingSwitchNodeId = -1L
+                            lastConfig = config
+                            if (nodeId > 0L) {
+                                lastNodeId = nodeId
+                            }
+                            startVpn(config)
+                        }
+                } else {
+                    lastConfig = config
+                    if (nodeId > 0L) {
+                        lastNodeId = nodeId
+                    }
+                    pendingSwitchConfig = null
+                    pendingSwitchNodeId = -1L
+                    startVpn(config)
+                }
+            }
             ACTION_STOP -> {
                 userRequestedStop = true
+                pendingSwitchConfig = null
+                pendingSwitchNodeId = -1L
                 stopService("Stopping service: ACTION_STOP intent")
                 stopSelf()
             }
@@ -226,6 +270,25 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     // ─── CommandServerHandler callbacks ───
 
     override fun serviceStop() {
+        val switchConfig = pendingSwitchConfig
+        val switchNodeId = pendingSwitchNodeId
+        if (!switchConfig.isNullOrBlank()) {
+            pendingSwitchConfig = null
+            pendingSwitchNodeId = -1L
+            vpnInterface?.close()
+            vpnInterface = null
+            _isRunning.value = false
+            VpnStateManager.updateConnectionState(false, null)
+            RuntimeLogBuffer.append("info", "Service stopped for node switch")
+            lastConfig = switchConfig
+            if (switchNodeId > 0L) {
+                lastNodeId = switchNodeId
+            }
+            serviceScope.launch {
+                startVpn(switchConfig)
+            }
+            return
+        }
         RuntimeLogBuffer.append(
             if (userRequestedStop) "info" else "warn",
             if (userRequestedStop) "Service stopped" else "Service stopped unexpectedly"

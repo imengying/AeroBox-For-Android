@@ -114,14 +114,18 @@ fun ConnectionCard(
                 else MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        if (isConnected) {
-            Text(
-                text = connectionDuration,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        }
+        Text(
+            text = if (isConnected) connectionDuration else " ",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isConnected) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0f)
+            },
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .height(20.dp)
+        )
 
     }
 }

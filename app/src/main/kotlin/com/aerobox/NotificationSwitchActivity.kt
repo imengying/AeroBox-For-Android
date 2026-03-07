@@ -79,7 +79,7 @@ class NotificationSwitchActivity : ComponentActivity() {
                     ).show()
                     return@launch
                 }
-                vpnRepository.startVpn(config, node.id)
+                vpnRepository.switchNode(config, node.id)
             }.onFailure {
                 Toast.makeText(
                     this@NotificationSwitchActivity,

@@ -80,19 +80,48 @@ jobs:
 
           SING_VERSION="${SING_BOX_VERSION#v}"
           echo "Building libbox ${SING_VERSION} with tags: ${LIBBOX_BUILD_TAGS}"
+          if [[ ",${LIBBOX_BUILD_TAGS}," == *",with_clash_api,"* ]]; then
+            echo "::error::with_clash_api should not be present in LIBBOX_BUILD_TAGS after the runtime-log patch"
+            exit 1
+          fi
 
-          # Keep platform log callbacks, but do not force-enable clash-api for them.
-          # The app does not use libbox's Clash API gRPC surface; it only needs runtime logs.
+          # Upstream sing-box 1.13.x treats `PlatformLogWriter != nil` as a reason to enable
+          # clash-api automatically. AeroBox only uses PlatformLogWriter for runtime log
+          # callbacks, and does not depend on the Clash API gRPC surface. Keep this patch
+          # explicit and fail loudly if upstream refactors the target block.
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path("box.go")
           text = path.read_text()
-          old = """\tif experimentalOptions.ClashAPI != nil || options.PlatformLogWriter != nil {\n\t\tneedClashAPI = true\n\t}\n"""
-          new = """\tif experimentalOptions.ClashAPI != nil {\n\t\tneedClashAPI = true\n\t}\n"""
-          if old not in text:
-              raise SystemExit("Failed to patch needClashAPI condition in box.go")
-          path.write_text(text.replace(old, new, 1))
+          old = (
+              "\tif experimentalOptions.ClashAPI != nil || options.PlatformLogWriter != nil {\n"
+              "\t\tneedClashAPI = true\n"
+              "\t}\n"
+          )
+          new = (
+              "\tif experimentalOptions.ClashAPI != nil {\n"
+              "\t\tneedClashAPI = true\n"
+              "\t}\n"
+          )
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(
+                  f"Failed to patch needClashAPI condition in box.go: expected exactly 1 match, found {count}. "
+                  "Review upstream sing-box box.go before releasing."
+              )
+          patched = text.replace(old, new, 1)
+          if old in patched or new not in patched:
+              raise SystemExit("Patch verification failed for box.go needClashAPI condition")
+          path.write_text(patched)
           PY
+
+          echo "--- patched box.go needClashAPI condition ---"
+          grep -n "needClashAPI" box.go
+          if grep -n "PlatformLogWriter != nil" box.go; then
+            echo "::error::PlatformLogWriter still affects needClashAPI in patched box.go"
+            exit 1
+          fi
 
           # Build with gomobile bind directly (no need to patch build_libbox)
           mkdir -p "${GITHUB_WORKSPACE}/app/build/libbox"

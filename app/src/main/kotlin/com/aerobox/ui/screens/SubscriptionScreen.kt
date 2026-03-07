@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -74,6 +75,7 @@ fun SubscriptionScreen(
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<Subscription?>(null) }
     var deleteTarget by remember { mutableStateOf<Subscription?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -152,6 +154,7 @@ fun SubscriptionScreen(
                 items(subscriptions, key = { it.id }) { subscription ->
                     SubscriptionItem(
                         subscription = subscription,
+                        onEdit = { editTarget = subscription },
                         onUpdate = { viewModel.updateSubscription(subscription) },
                         onDelete = { deleteTarget = subscription },
                         isLoading = isLoading
@@ -163,7 +166,9 @@ fun SubscriptionScreen(
 
     // Add subscription dialog
     if (showAddDialog) {
-        AddSubscriptionDialog(
+        SubscriptionEditorDialog(
+            title = stringResource(R.string.add_subscription),
+            confirmText = stringResource(R.string.add),
             onDismiss = { showAddDialog = false },
             onConfirm = { name, url, autoUpdate, updateInterval ->
                 viewModel.addSubscription(
@@ -173,6 +178,28 @@ fun SubscriptionScreen(
                     updateInterval = updateInterval
                 )
                 showAddDialog = false
+            }
+        )
+    }
+
+    editTarget?.let { subscription ->
+        SubscriptionEditorDialog(
+            title = stringResource(R.string.edit_subscription),
+            confirmText = stringResource(R.string.save),
+            initialName = subscription.name,
+            initialUrl = subscription.url,
+            initialAutoUpdate = subscription.autoUpdate,
+            initialUpdateInterval = subscription.updateInterval,
+            onDismiss = { editTarget = null },
+            onConfirm = { name, url, autoUpdate, updateInterval ->
+                viewModel.editSubscription(
+                    subscription = subscription,
+                    name = name,
+                    url = url,
+                    autoUpdate = autoUpdate,
+                    updateInterval = updateInterval
+                )
+                editTarget = null
             }
         )
     }
@@ -204,6 +231,7 @@ fun SubscriptionScreen(
 @Composable
 private fun SubscriptionItem(
     subscription: Subscription,
+    onEdit: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
     isLoading: Boolean
@@ -213,7 +241,7 @@ private fun SubscriptionItem(
             .fillMaxWidth()
             .animateContentSize()
             .combinedClickable(
-                onClick = onUpdate,
+                onClick = onEdit,
                 onLongClick = onDelete
             ),
         shape = RoundedCornerShape(16.dp),
@@ -279,6 +307,13 @@ private fun SubscriptionItem(
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
+            IconButton(onClick = onEdit, enabled = !isLoading) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Filled.Delete,
@@ -291,21 +326,29 @@ private fun SubscriptionItem(
 }
 
 @Composable
-private fun AddSubscriptionDialog(
+private fun SubscriptionEditorDialog(
+    title: String,
+    confirmText: String,
+    initialName: String = "",
+    initialUrl: String = "",
+    initialAutoUpdate: Boolean = true,
+    initialUpdateInterval: Long = DEFAULT_INTERVAL_MINUTES * 60_000L,
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String, autoUpdate: Boolean, updateInterval: Long) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var autoUpdate by remember { mutableStateOf(true) }
-    var updateIntervalMinutes by remember { mutableStateOf(DEFAULT_INTERVAL_MINUTES.toString()) }
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var url by remember(initialUrl) { mutableStateOf(initialUrl) }
+    var autoUpdate by remember(initialAutoUpdate) { mutableStateOf(initialAutoUpdate) }
+    var updateIntervalMinutes by remember(initialUpdateInterval) {
+        mutableStateOf((initialUpdateInterval / 60_000L).coerceAtLeast(MIN_INTERVAL_MINUTES).toString())
+    }
 
     val intervalMinutes = updateIntervalMinutes.toLongOrNull()
     val intervalValid = !autoUpdate || (intervalMinutes != null && intervalMinutes >= MIN_INTERVAL_MINUTES)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.add_subscription)) },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(
@@ -380,7 +423,7 @@ private fun AddSubscriptionDialog(
                 },
                 enabled = name.isNotBlank() && url.isNotBlank() && intervalValid
             ) {
-                Text(stringResource(R.string.confirm))
+                Text(confirmText)
             }
         },
         dismissButton = {

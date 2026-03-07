@@ -10,6 +10,7 @@
     <string name="upload">上传</string>
     <string name="download">下载</string>
     <string name="add_subscription">添加订阅</string>
+    <string name="edit_subscription">修改订阅</string>
     <string name="delete_subscription">删除订阅</string>
     <string name="appearance">外观</string>
     <string name="dark_mode">主题</string>
@@ -22,6 +23,7 @@
     <string name="confirm">确定</string>
     <string name="cancel">取消</string>
     <string name="add">添加</string>
+    <string name="save">保存</string>
     <string name="delete">删除</string>
     <string name="no_subscription">暂无订阅</string>
     <string name="subscription_name">订阅名称</string>

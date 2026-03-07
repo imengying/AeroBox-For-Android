@@ -93,6 +93,30 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun editSubscription(
+        subscription: Subscription,
+        name: String,
+        url: String,
+        autoUpdate: Boolean,
+        updateInterval: Long
+    ) {
+        if (!isValidSubscriptionUrl(url)) {
+            _uiMessage.tryEmit("订阅链接无效，请使用 http/https 链接")
+            return
+        }
+
+        viewModelScope.launch {
+            repository.updateSubscriptionDetails(
+                subscription = subscription,
+                name = name,
+                url = url,
+                autoUpdate = autoUpdate,
+                updateInterval = updateInterval
+            )
+            _uiMessage.tryEmit("订阅已修改：${name.ifBlank { subscription.name }}")
+        }
+    }
+
     fun updateSubscription(subscription: Subscription) {
         viewModelScope.launch {
             _isLoading.value = true
