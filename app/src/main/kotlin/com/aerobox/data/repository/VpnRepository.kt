@@ -172,19 +172,19 @@ class VpnRepository(private val context: Context) {
             runCatching { JSONObject(config) }.getOrNull()?.let { root ->
                 RuntimeLogBuffer.append(
                     "debug",
-                    "Config dns: ${root.optJSONObject(\"dns\")?.toString() ?: \"{}\"}"
+                    "Config dns: ${root.optJSONObject("dns")?.toString() ?: "{}"}"
                 )
                 RuntimeLogBuffer.append(
                     "debug",
-                    "Config inbound[0]: ${root.optJSONArray(\"inbounds\")?.optJSONObject(0)?.toString() ?: \"{}\"}"
+                    "Config inbound[0]: ${root.optJSONArray("inbounds")?.optJSONObject(0)?.toString() ?: "{}"}"
                 )
                 RuntimeLogBuffer.append(
                     "debug",
-                    "Config outbound[0]: ${root.optJSONArray(\"outbounds\")?.optJSONObject(0)?.toString() ?: \"{}\"}"
+                    "Config outbound[0]: ${root.optJSONArray("outbounds")?.optJSONObject(0)?.toString() ?: "{}"}"
                 )
                 RuntimeLogBuffer.append(
                     "debug",
-                    "Config route: ${root.optJSONObject(\"route\")?.toString() ?: \"{}\"}"
+                    "Config route: ${root.optJSONObject("route")?.toString() ?: "{}"}"
                 )
             }
         }
