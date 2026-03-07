@@ -24,7 +24,6 @@
     <string name="connection_settings">连接设置</string>
     <string name="auto_connect">自动连接</string>
     <string name="auto_update_subscription">自动更新订阅</string>
-    <string name="show_notification">显示通知</string>
     <string name="about">关于</string>
     <string name="version">版本</string>
     <string name="open_source_licenses">开源许可</string>

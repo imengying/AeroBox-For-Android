@@ -50,6 +50,7 @@ fun SettingsScreen(
     onNavigateToPerAppProxy: () -> Unit = {},
     onNavigateToRouting: () -> Unit = {},
     onNavigateToLog: () -> Unit = {},
+    onNavigateToLicense: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel()
 ) {
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
@@ -291,6 +292,7 @@ fun SettingsScreen(
         }
         item {
             SettingItem(
+                modifier = Modifier.clickable { onNavigateToLicense() },
                 icon = { Icon(AppIcons.Security, contentDescription = null) },
                 title = stringResource(R.string.open_source_licenses),
                 supporting = stringResource(R.string.about),

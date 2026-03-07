@@ -351,12 +351,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
         val ipv4Endpoints = listOf(
             "https://api4.ipify.org",
-            "https://ipv4.icanhazip.com",
             "https://v4.ident.me"
         )
         val ipv6Endpoints = listOf(
             "https://api6.ipify.org",
-            "https://ipv6.icanhazip.com",
             "https://v6.ident.me"
         )
 
@@ -371,8 +369,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             for (endpoint in group) {
                 val ip = runCatching {
                     val connection = URL(endpoint).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 1500
-                    connection.readTimeout = 1500
+                    connection.connectTimeout = 700
+                    connection.readTimeout = 700
                     connection.instanceFollowRedirects = true
                     connection.useCaches = false
                     try {

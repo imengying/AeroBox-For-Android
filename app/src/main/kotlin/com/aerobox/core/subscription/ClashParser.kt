@@ -106,6 +106,7 @@ object ClashParser {
             type == ProxyType.TROJAN || type == ProxyType.HYSTERIA2 || type == ProxyType.TUIC -> true
             map["tls"]?.lowercase() == "true" -> true
             map["security"]?.lowercase() in listOf("tls", "reality") -> true
+            !map["reality-opts-public-key"].isNullOrBlank() -> true
             else -> false
         }
 
@@ -155,7 +156,7 @@ object ClashParser {
             password = map["password"] ?: map["passwd"],
             method = map["cipher"] ?: map["method"],
             flow = map["flow"],
-            security = map["security"],
+            security = map["security"] ?: if (!map["reality-opts-public-key"].isNullOrBlank()) "reality" else null,
             network = normalizedNetwork,
             tls = tls,
             sni = map["sni"] ?: map["servername"],
@@ -164,8 +165,17 @@ object ClashParser {
             transportServiceName = transportServiceName,
             alpn = map["alpn"],
             fingerprint = map["fingerprint"] ?: map["client-fingerprint"],
-            publicKey = map["public-key"] ?: map["pbk"],
-            shortId = map["short-id"] ?: map["sid"],
+            publicKey = firstNonBlank(
+                map["public-key"],
+                map["pbk"],
+                map["reality-opts-public-key"]
+            ),
+            shortId = firstNonBlank(
+                map["short-id"],
+                map["sid"],
+                map["reality-opts-short-id"],
+                map["reality-opts-shortid"]
+            ),
             username = map["username"],
             privateKey = map["private-key"],
             localAddress = map["ip"] ?: map["local-address"],

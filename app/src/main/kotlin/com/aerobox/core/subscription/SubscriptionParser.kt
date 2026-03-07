@@ -175,8 +175,8 @@ object SubscriptionParser {
             ),
             alpn = params["alpn"],
             fingerprint = params["fp"],
-            publicKey = params["pbk"],
-            shortId = params["sid"],
+            publicKey = firstNonBlank(params["pbk"], params["public-key"], params["public_key"]),
+            shortId = firstNonBlank(params["sid"], params["short-id"], params["short_id"]),
             allowInsecure = parseBooleanField(
                 params["allowInsecure"],
                 params["insecure"]
@@ -292,6 +292,9 @@ object SubscriptionParser {
         for (index in 0 until array.length()) {
             val obj = array.optJSONObject(index) ?: continue
             val transport = obj.optJSONObject("transport")
+            val tlsObject = obj.optJSONObject("tls")
+            val realityObject = tlsObject?.optJSONObject("reality")
+            val utlsObject = tlsObject?.optJSONObject("utls")
             val typeRaw = obj.optString("type", obj.optString("protocol", "")).lowercase()
             val type = when {
                 typeRaw.contains("shadow") -> {
@@ -329,8 +332,14 @@ object SubscriptionParser {
                 flow = obj.optString("flow", "").ifBlank { null },
                 security = obj.optString("security", "").ifBlank { null },
                 network = network,
-                tls = obj.optBoolean("tls", false),
-                sni = obj.optString("sni", "").ifBlank { null },
+                tls = obj.optBoolean("tls", false)
+                        || tlsObject?.optBoolean("enabled", false) == true
+                        || realityObject?.optBoolean("enabled", false) == true,
+                sni = firstNonBlank(
+                    obj.optString("sni", "").ifBlank { null },
+                    tlsObject?.optString("server_name", "")?.ifBlank { null },
+                    tlsObject?.optString("sni", "")?.ifBlank { null }
+                ),
                 transportHost = firstNonBlank(
                     obj.optString("host", "").ifBlank { null },
                     transport?.optString("host", "")?.ifBlank { null },
@@ -354,10 +363,23 @@ object SubscriptionParser {
                         null
                     }
                 ),
-                alpn = obj.optString("alpn", "").ifBlank { null },
-                fingerprint = obj.optString("fingerprint", obj.optString("fp", "")).ifBlank { null },
-                publicKey = obj.optString("public_key", obj.optString("pbk", "")).ifBlank { null },
-                shortId = obj.optString("short_id", obj.optString("sid", "")).ifBlank { null },
+                alpn = firstNonBlank(
+                    obj.optString("alpn", "").ifBlank { null },
+                    tlsObject?.optJSONArray("alpn")?.toCommaSeparatedString(),
+                    tlsObject?.optString("alpn", "")?.ifBlank { null }
+                ),
+                fingerprint = firstNonBlank(
+                    obj.optString("fingerprint", obj.optString("fp", "")).ifBlank { null },
+                    utlsObject?.optString("fingerprint", "")?.ifBlank { null }
+                ),
+                publicKey = firstNonBlank(
+                    obj.optString("public_key", obj.optString("pbk", "")).ifBlank { null },
+                    realityObject?.optString("public_key", "")?.ifBlank { null }
+                ),
+                shortId = firstNonBlank(
+                    obj.optString("short_id", obj.optString("sid", "")).ifBlank { null },
+                    realityObject?.optString("short_id", "")?.ifBlank { null }
+                ),
                 username = obj.optString("username", "").ifBlank { null },
                 privateKey = obj.optString("private_key", "").ifBlank { null },
                 localAddress = obj.optString("local_address", "").ifBlank { null },
@@ -367,6 +389,7 @@ object SubscriptionParser {
                 mtu = obj.optInt("mtu", 0).takeIf { it > 0 },
                 allowInsecure = obj.optBoolean("allowInsecure", false)
                         || obj.optBoolean("allow_insecure", false)
+                        || tlsObject?.optBoolean("insecure", false) == true
                         || parseBooleanField(obj.optString("allowInsecure"))
             )
         }

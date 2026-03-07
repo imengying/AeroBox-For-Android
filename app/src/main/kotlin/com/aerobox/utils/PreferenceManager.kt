@@ -19,7 +19,6 @@ object PreferenceManager {
     private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     private val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
     private val AUTO_UPDATE_SUBSCRIPTION = booleanPreferencesKey("auto_update_subscription")
-    private val SHOW_NOTIFICATION = booleanPreferencesKey("show_notification")
     private val LAST_SELECTED_NODE_ID = longPreferencesKey("last_selected_node_id")
 
     // Phase 2: Routing & Network
@@ -53,9 +52,6 @@ object PreferenceManager {
 
     fun autoUpdateSubscriptionFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_UPDATE_SUBSCRIPTION] ?: false }
-
-    fun showNotificationFlow(context: Context): Flow<Boolean> =
-        context.dataStore.data.map { it[SHOW_NOTIFICATION] ?: true }
 
     fun lastSelectedNodeIdFlow(context: Context): Flow<Long> =
         context.dataStore.data.map { it[LAST_SELECTED_NODE_ID] ?: -1L }
@@ -128,10 +124,6 @@ object PreferenceManager {
 
     suspend fun setAutoUpdateSubscription(context: Context, enabled: Boolean) {
         context.dataStore.edit { it[AUTO_UPDATE_SUBSCRIPTION] = enabled }
-    }
-
-    suspend fun setShowNotification(context: Context, enabled: Boolean) {
-        context.dataStore.edit { it[SHOW_NOTIFICATION] = enabled }
     }
 
     suspend fun setLastSelectedNodeId(context: Context, nodeId: Long) {

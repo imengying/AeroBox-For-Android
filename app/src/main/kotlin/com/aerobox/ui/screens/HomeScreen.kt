@@ -125,7 +125,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         }
 
         item {
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(18.dp))
         }
 
         item {

@@ -25,9 +25,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         PreferenceManager.autoUpdateSubscriptionFlow(appContext)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val showNotification: StateFlow<Boolean> = PreferenceManager.showNotificationFlow(appContext)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
-
     // Phase 2
     val routingMode: StateFlow<RoutingMode> = PreferenceManager.routingModeFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RoutingMode.RULE_BASED)
@@ -91,10 +88,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     suspend fun setAutoUpdateSubscription(enabled: Boolean) {
         PreferenceManager.setAutoUpdateSubscription(appContext, enabled)
-    }
-
-    suspend fun setShowNotification(enabled: Boolean) {
-        PreferenceManager.setShowNotification(appContext, enabled)
     }
 
     // Phase 2 setters

@@ -28,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aerobox.R
 import com.aerobox.ui.screens.HomeScreen
+import com.aerobox.ui.screens.LicenseScreen
 import com.aerobox.ui.screens.LogScreen
 import com.aerobox.ui.screens.PerAppProxyScreen
 import com.aerobox.ui.screens.RoutingSettingsScreen
@@ -103,6 +104,9 @@ fun AppNavigation() {
                     },
                     onNavigateToLog = {
                         navController.navigate("log")
+                    },
+                    onNavigateToLicense = {
+                        navController.navigate("license")
                     }
                 )
             }
@@ -126,6 +130,11 @@ fun AppNavigation() {
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
+            composable("license") {
+                LicenseScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -136,7 +145,8 @@ private fun MainScreen(
     onNavigateToSubscriptions: () -> Unit,
     onNavigateToPerAppProxy: () -> Unit,
     onNavigateToRouting: () -> Unit,
-    onNavigateToLog: () -> Unit
+    onNavigateToLog: () -> Unit,
+    onNavigateToLicense: () -> Unit
 ) {
     val items = listOf(
         BottomNavItem(
@@ -192,7 +202,8 @@ private fun MainScreen(
                     onNavigateToSubscriptions = onNavigateToSubscriptions,
                     onNavigateToPerAppProxy = onNavigateToPerAppProxy,
                     onNavigateToRouting = onNavigateToRouting,
-                    onNavigateToLog = onNavigateToLog
+                    onNavigateToLog = onNavigateToLog,
+                    onNavigateToLicense = onNavigateToLicense
                 )
             }
         }
