@@ -86,42 +86,76 @@ jobs:
           fi
 
           # Upstream sing-box 1.13.x treats `PlatformLogWriter != nil` as a reason to enable
-          # clash-api automatically. AeroBox only uses PlatformLogWriter for runtime log
-          # callbacks, and does not depend on the Clash API gRPC surface. Keep this patch
-          # explicit and fail loudly if upstream refactors the target block.
+          # extra services automatically. AeroBox only uses PlatformLogWriter for runtime log
+          # callbacks, and does not depend on the Clash API gRPC surface or cache-file side
+          # effects. Keep these patches explicit and fail loudly if upstream refactors the
+          # target blocks.
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path("box.go")
           text = path.read_text()
-          old = (
+          cache_old = (
+              "\tif experimentalOptions.CacheFile != nil && experimentalOptions.CacheFile.Enabled || options.PlatformLogWriter != nil {\n"
+              "\t\tneedCacheFile = true\n"
+              "\t}\n"
+          )
+          cache_new = (
+              "\tif experimentalOptions.CacheFile != nil && experimentalOptions.CacheFile.Enabled {\n"
+              "\t\tneedCacheFile = true\n"
+              "\t}\n"
+          )
+          clash_old = (
               "\tif experimentalOptions.ClashAPI != nil || options.PlatformLogWriter != nil {\n"
               "\t\tneedClashAPI = true\n"
               "\t}\n"
           )
-          new = (
+          clash_new = (
               "\tif experimentalOptions.ClashAPI != nil {\n"
               "\t\tneedClashAPI = true\n"
               "\t}\n"
           )
-          count = text.count(old)
-          if count != 1:
+
+          cache_count = text.count(cache_old)
+          if cache_count != 1:
               raise SystemExit(
-                  f"Failed to patch needClashAPI condition in box.go: expected exactly 1 match, found {count}. "
+                  f"Failed to patch needCacheFile condition in box.go: expected exactly 1 match, found {cache_count}. "
                   "Review upstream sing-box box.go before releasing."
               )
-          patched = text.replace(old, new, 1)
-          if old in patched or new not in patched:
+          clash_count = text.count(clash_old)
+          if clash_count != 1:
+              raise SystemExit(
+                  f"Failed to patch needClashAPI condition in box.go: expected exactly 1 match, found {clash_count}. "
+                  "Review upstream sing-box box.go before releasing."
+              )
+          patched = text.replace(cache_old, cache_new, 1).replace(clash_old, clash_new, 1)
+          if cache_old in patched or cache_new not in patched:
+              raise SystemExit("Patch verification failed for box.go needCacheFile condition")
+          if clash_old in patched or clash_new not in patched:
               raise SystemExit("Patch verification failed for box.go needClashAPI condition")
           path.write_text(patched)
           PY
 
-          echo "--- patched box.go needClashAPI condition ---"
-          grep -n "needClashAPI" box.go
-          if grep -n "PlatformLogWriter != nil" box.go; then
-            echo "::error::PlatformLogWriter still affects needClashAPI in patched box.go"
-            exit 1
-          fi
+          echo "--- patched box.go PlatformLogWriter conditions ---"
+          grep -n "needCacheFile\\|needClashAPI" box.go
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("box.go").read_text()
+          forbidden = [
+              "\tif experimentalOptions.CacheFile != nil && experimentalOptions.CacheFile.Enabled || options.PlatformLogWriter != nil {\n",
+              "\tif experimentalOptions.ClashAPI != nil || options.PlatformLogWriter != nil {\n",
+          ]
+          for old in forbidden:
+              if old in text:
+                  raise SystemExit(
+                      "PlatformLogWriter still affects needCacheFile/needClashAPI in patched box.go"
+                  )
+          print("--- remaining PlatformLogWriter references ---")
+          for line_no, line in enumerate(text.splitlines(), 1):
+              if "PlatformLogWriter" in line:
+                  print(f"{line_no}:{line}")
+          PY
 
           # Build with gomobile bind directly (no need to patch build_libbox)
           mkdir -p "${GITHUB_WORKSPACE}/app/build/libbox"
