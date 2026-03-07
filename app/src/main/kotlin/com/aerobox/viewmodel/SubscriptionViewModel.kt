@@ -8,7 +8,6 @@ import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.Subscription
 import com.aerobox.data.repository.SubscriptionRepository
 import com.aerobox.data.repository.SubscriptionImportResult
-import com.aerobox.utils.NetworkUtils
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -165,18 +164,6 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                 _uiMessage.tryEmit("订阅部分更新失败（成功 $successCount / 失败 $failCount）$suffix")
             }
             _isLoading.value = false
-        }
-    }
-
-    fun testAllNodesLatency() {
-        viewModelScope.launch {
-            val nodes = selectedSubscriptionNodes.value
-            nodes.forEach { node ->
-                launch {
-                    val latency = NetworkUtils.pingTcp(node.server, node.port)
-                    repository.updateNodeLatency(node.id, latency)
-                }
-            }
         }
     }
 

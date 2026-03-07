@@ -33,6 +33,4 @@ object NetworkUtils {
     }
 
     fun formatSpeed(bps: Long): String = "${formatBytes(bps)}/s"
-
-    fun isValidUrl(url: String): Boolean = "^https?://.*".toRegex().matches(url)
 }

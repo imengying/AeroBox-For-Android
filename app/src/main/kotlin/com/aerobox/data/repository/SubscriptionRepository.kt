@@ -47,9 +47,6 @@ class SubscriptionRepository(context: Context) {
     fun getNodesBySubscription(subscriptionId: Long): Flow<List<ProxyNode>> =
         proxyNodeDao.getNodesBySubscription(subscriptionId)
 
-    suspend fun getNodesBySubscriptionOnce(subscriptionId: Long): List<ProxyNode> =
-        proxyNodeDao.getNodesBySubscriptionOnce(subscriptionId)
-
     suspend fun addSubscription(
         name: String,
         url: String,
@@ -175,8 +172,6 @@ class SubscriptionRepository(context: Context) {
     suspend fun updateNodeLatency(nodeId: Long, latency: Int) {
         proxyNodeDao.updateLatency(nodeId, latency)
     }
-
-    suspend fun getNodeById(nodeId: Long): ProxyNode? = proxyNodeDao.getNodeById(nodeId)
 
     private suspend fun prepareSubscriptionNodes(url: String): PreparedSubscriptionData {
         val fetchResult = fetchSubscription(url)

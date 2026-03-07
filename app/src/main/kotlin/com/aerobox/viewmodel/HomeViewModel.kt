@@ -308,27 +308,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun testAllNodesLatency() {
-        viewModelScope.launch {
-            val jobs = allNodes.value.map { node ->
-                launch {
-                    val latency = testNodeLatency(node)
-                    subscriptionRepository.updateNodeLatency(node.id, latency)
-                }
-            }
-            jobs.forEach { it.join() }
-
-            val updatedNodes = nodeDao.getAllNodes().first()
-            val bestNode = updatedNodes
-                .filter { it.latency > 0 }
-                .minByOrNull { it.latency }
-            if (bestNode != null) {
-                selectNode(bestNode)
-            }
-        }
-    }
-
-
     fun testSubscriptionNodesLatency(nodes: List<ProxyNode>) {
         viewModelScope.launch {
             val jobs = nodes.map { node ->
