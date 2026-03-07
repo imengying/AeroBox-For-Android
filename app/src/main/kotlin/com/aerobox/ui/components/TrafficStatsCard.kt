@@ -36,7 +36,7 @@ fun TrafficStatsCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Box(
@@ -72,7 +72,7 @@ fun TrafficStatsCard(
                     Text(
                         text = "总上传 ${NetworkUtils.formatBytes(stats.totalUpload)}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -80,7 +80,7 @@ fun TrafficStatsCard(
                     Text(
                         text = "总下载 ${NetworkUtils.formatBytes(stats.totalDownload)}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.End,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
@@ -113,7 +113,7 @@ private fun SpeedItem(
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

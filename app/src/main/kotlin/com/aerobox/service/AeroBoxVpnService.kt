@@ -76,7 +76,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             when (intent.action) {
                 ACTION_STOP -> {
                     userRequestedStop = true
-                    stopService()
+                    stopService("Stopping service: notification action")
                     stopSelf()
                 }
 
@@ -104,7 +104,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             }
             ACTION_STOP -> {
                 userRequestedStop = true
-                stopService()
+                stopService("Stopping service: ACTION_STOP intent")
                 stopSelf()
             }
             ACTION_SWITCH -> {
@@ -155,7 +155,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 Log.e(TAG, "startVpn failed", e)
                 RuntimeLogBuffer.append("error", "startVpn failed: ${e.message ?: e}")
                 VpnStateManager.updateLastError(e.message ?: e.toString())
-                stopService()
+                stopService("Stopping service after start failure")
             }
         }
     }
@@ -238,8 +238,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         return AeroBoxApplication.database.proxyNodeDao().getNodeById(nodeId)
     }
 
-    private fun stopService() {
-        RuntimeLogBuffer.append("info", "Stopping service")
+    private fun stopService(reason: String = "Stopping service") {
+        RuntimeLogBuffer.append("info", reason)
         speedTickerJob?.cancel()
         speedTickerJob = null
 
@@ -287,7 +287,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             // Unexpected disconnect — try auto-reconnect
             attemptReconnect()
         } else {
-            stopService()
+            stopService("Stopping service after serviceStop callback")
         }
     }
 
@@ -337,63 +337,83 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
         builder.setMetered(false)
 
-        // IPv4 addresses
+        val inet4Addresses = mutableListOf<Pair<String, Int>>()
         val inet4Address = options.inet4Address
         while (inet4Address.hasNext()) {
             val addr = inet4Address.next()
-            builder.addAddress(addr.address(), addr.prefix())
+            inet4Addresses.add(addr.address() to addr.prefix())
         }
+        inet4Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
-        // IPv6 addresses
+        val inet6Addresses = mutableListOf<Pair<String, Int>>()
         val inet6Address = options.inet6Address
         while (inet6Address.hasNext()) {
             val addr = inet6Address.next()
-            builder.addAddress(addr.address(), addr.prefix())
+            inet6Addresses.add(addr.address() to addr.prefix())
         }
+        inet6Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
         if (options.autoRoute) {
             builder.addDnsServer(options.dnsServerAddress.value)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val inet4Routes = mutableListOf<Pair<String, Int>>()
                 val inet4RouteAddress = options.inet4RouteAddress
-                if (inet4RouteAddress.hasNext()) {
-                    while (inet4RouteAddress.hasNext()) {
-                        val r = inet4RouteAddress.next()
-                        builder.addRoute(r.address(), r.prefix())
-                    }
+                while (inet4RouteAddress.hasNext()) {
+                    val route = inet4RouteAddress.next()
+                    inet4Routes.add(route.address() to route.prefix())
+                }
+                if (inet4Routes.isNotEmpty()) {
+                    inet4Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
                 } else {
                     builder.addRoute("0.0.0.0", 0)
                 }
 
+                val inet6Routes = mutableListOf<Pair<String, Int>>()
                 val inet6RouteAddress = options.inet6RouteAddress
-                if (inet6RouteAddress.hasNext()) {
-                    while (inet6RouteAddress.hasNext()) {
-                        val r = inet6RouteAddress.next()
-                        builder.addRoute(r.address(), r.prefix())
-                    }
-                } else if (options.inet6Address.hasNext()) {
+                while (inet6RouteAddress.hasNext()) {
+                    val route = inet6RouteAddress.next()
+                    inet6Routes.add(route.address() to route.prefix())
+                }
+                if (inet6Routes.isNotEmpty()) {
+                    inet6Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
+                } else if (inet6Addresses.isNotEmpty()) {
                     builder.addRoute("::", 0)
                 }
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Tun DNS=${options.dnsServerAddress.value}, ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
+                        "ipv4Routes=${inet4Routes.size}, ipv6Routes=${inet6Routes.size}"
+                )
             } else {
+                val inet4Routes = mutableListOf<Pair<String, Int>>()
                 val inet4RouteRange = options.inet4RouteRange
-                if (inet4RouteRange.hasNext()) {
-                    while (inet4RouteRange.hasNext()) {
-                        val r = inet4RouteRange.next()
-                        builder.addRoute(r.address(), r.prefix())
-                    }
+                while (inet4RouteRange.hasNext()) {
+                    val route = inet4RouteRange.next()
+                    inet4Routes.add(route.address() to route.prefix())
+                }
+                if (inet4Routes.isNotEmpty()) {
+                    inet4Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
                 } else {
                     builder.addRoute("0.0.0.0", 0)
                 }
 
+                val inet6Routes = mutableListOf<Pair<String, Int>>()
                 val inet6RouteRange = options.inet6RouteRange
-                if (inet6RouteRange.hasNext()) {
-                    while (inet6RouteRange.hasNext()) {
-                        val r = inet6RouteRange.next()
-                        builder.addRoute(r.address(), r.prefix())
-                    }
-                } else if (options.inet6Address.hasNext()) {
+                while (inet6RouteRange.hasNext()) {
+                    val route = inet6RouteRange.next()
+                    inet6Routes.add(route.address() to route.prefix())
+                }
+                if (inet6Routes.isNotEmpty()) {
+                    inet6Routes.forEach { (address, prefix) -> builder.addRoute(address, prefix) }
+                } else if (inet6Addresses.isNotEmpty()) {
                     builder.addRoute("::", 0)
                 }
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "Tun DNS=${options.dnsServerAddress.value}, ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
+                        "ipv4Routes=${inet4Routes.size}, ipv6Routes=${inet6Routes.size}"
+                )
             }
         }
 
@@ -522,7 +542,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     override fun onDestroy() {
         userRequestedStop = true
-        stopService()
+        stopService("Stopping service: onDestroy")
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -536,7 +556,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 PreferenceManager.autoReconnectFlow(applicationContext).first()
             }
             if (!autoReconnect) {
-                stopService()
+                stopService("Stopping service: auto reconnect disabled")
                 return@launch
             }
 

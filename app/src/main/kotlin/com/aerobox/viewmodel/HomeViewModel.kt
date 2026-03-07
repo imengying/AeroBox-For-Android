@@ -371,8 +371,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             for (endpoint in group) {
                 val ip = runCatching {
                     val connection = URL(endpoint).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 2500
-                    connection.readTimeout = 2500
+                    connection.connectTimeout = 1500
+                    connection.readTimeout = 1500
                     connection.instanceFollowRedirects = true
                     connection.useCaches = false
                     try {

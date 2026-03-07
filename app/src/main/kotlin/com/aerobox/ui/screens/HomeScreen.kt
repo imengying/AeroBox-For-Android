@@ -94,7 +94,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 120.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+        contentPadding = PaddingValues(top = 80.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -129,41 +129,35 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         }
 
         item {
+            NodeSelectorCard(
+                nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
+                nodeAddress = selectedNode?.type?.displayName() ?: "--",
+                onClick = { showNodeList = true }
+            )
+        }
+
+        item {
+            RoutingModeRow(
+                selected = routingMode,
+                onSelect = { viewModel.setRoutingMode(it) }
+            )
+        }
+
+        item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(0.46f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    NodeSelectorCard(
-                        nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
-                        nodeAddress = selectedNode?.type?.displayName() ?: "--",
-                        onClick = { showNodeList = true },
-                        modifier = Modifier.height(88.dp)
-                    )
-                    NetworkDetectCard(
-                        ip = detectedIp,
-                        onClick = { viewModel.refreshNetworkInfo() },
-                        modifier = Modifier.height(100.dp)
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(0.54f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RoutingModeRow(
-                        selected = routingMode,
-                        onSelect = { viewModel.setRoutingMode(it) },
-                        modifier = Modifier.height(88.dp)
-                    )
-                    TrafficStatsCard(
-                        stats = trafficStats,
-                        modifier = Modifier.height(100.dp)
-                    )
-                }
+                NetworkDetectCard(
+                    ip = detectedIp,
+                    onClick = { viewModel.refreshNetworkInfo() },
+                    modifier = Modifier.weight(0.5f).height(100.dp)
+                )
+                TrafficStatsCard(
+                    stats = trafficStats,
+                    modifier = Modifier.weight(0.5f).height(100.dp)
+                )
             }
         }
 
@@ -310,25 +304,30 @@ private fun NodeSelectorCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            Text(
-                text = nodeName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = nodeAddress,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = nodeName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = nodeAddress,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
     }
 }
@@ -385,7 +384,7 @@ private fun RoutingModeRow(
                             .clip(RoundedCornerShape(12.dp))
                             .background(bgColor)
                             .clickable { onSelect(mode) }
-                            .padding(horizontal = 2.dp, vertical = 8.dp),
+                            .padding(horizontal = 2.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(

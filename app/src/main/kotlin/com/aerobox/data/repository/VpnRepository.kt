@@ -30,6 +30,7 @@ class VpnRepository(private val context: Context) {
     }
 
     fun stopVpn() {
+        RuntimeLogBuffer.append("info", "Sending ACTION_STOP to VPN service")
         val intent = Intent(context, AeroBoxVpnService::class.java).apply {
             action = AeroBoxVpnService.ACTION_STOP
         }
@@ -56,6 +57,27 @@ class VpnRepository(private val context: Context) {
             "info",
             "Generating config for ${node.name.ifBlank { "unnamed node" }}"
         )
+        RuntimeLogBuffer.append(
+            "debug",
+            buildString {
+                append("Node summary: ")
+                append("type=").append(node.type.name)
+                append(", server=").append(node.server)
+                append(":").append(node.port)
+                node.network?.takeIf { it.isNotBlank() }?.let { append(", network=").append(it) }
+                append(", tls=").append(node.tls)
+                node.security?.takeIf { it.isNotBlank() }?.let { append(", security=").append(it) }
+                node.flow?.takeIf { it.isNotBlank() }?.let { append(", flow=").append(it) }
+                node.sni?.takeIf { it.isNotBlank() }?.let { append(", sni=").append(it) }
+                node.transportHost?.takeIf { it.isNotBlank() }?.let { append(", host=").append(it) }
+                node.transportPath?.takeIf { it.isNotBlank() }?.let { append(", path=").append(it) }
+                node.transportServiceName?.takeIf { it.isNotBlank() }?.let { append(", service=").append(it) }
+                node.alpn?.takeIf { it.isNotBlank() }?.let { append(", alpn=").append(it) }
+                node.fingerprint?.takeIf { it.isNotBlank() }?.let { append(", fp=").append(it) }
+                if (!node.publicKey.isNullOrBlank()) append(", reality=true")
+                if (node.allowInsecure) append(", insecure=true")
+            }
+        )
         withContext(Dispatchers.IO) {
             GeoAssetManager.ensureBundledAssets(context)
         }
@@ -72,6 +94,13 @@ class VpnRepository(private val context: Context) {
         val enableGeoCnIpRule = PreferenceManager.enableGeoCnIpRuleFlow(context).first()
         val enableGeoAdsBlock = PreferenceManager.enableGeoAdsBlockFlow(context).first()
         val enableGeoBlockQuic = PreferenceManager.enableGeoBlockQuicFlow(context).first()
+        RuntimeLogBuffer.append(
+            "debug",
+            "Config options: mode=$routingMode, doh=$enableDoh, socksIn=$enableSocksInbound, " +
+                "httpIn=$enableHttpInbound, ipv6=$enableIPv6, geoRules=$enableGeoRules, " +
+                "cnDomain=$enableGeoCnDomainRule, cnIp=$enableGeoCnIpRule, ads=$enableGeoAdsBlock, " +
+                "blockQuic=$enableGeoBlockQuic"
+        )
 
         val geoIpCnRuleSetPath = if (enableGeoRules) {
             GeoAssetManager
