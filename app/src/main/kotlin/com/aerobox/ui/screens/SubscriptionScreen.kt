@@ -2,7 +2,8 @@ package com.aerobox.ui.screens
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -45,12 +47,17 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,10 +85,21 @@ fun SubscriptionScreen(
     var editTarget by remember { mutableStateOf<Subscription?>(null) }
     var deleteTarget by remember { mutableStateOf<Subscription?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
+    var orderedSubscriptions by remember { mutableStateOf(subscriptions) }
+    var draggingSubscriptionId by remember { mutableStateOf<Long?>(null) }
+    var draggingOffsetY by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(viewModel) {
         viewModel.uiMessage.collectLatest { message ->
             snackbarHostState.showSnackbar(message)
+        }
+    }
+
+
+    LaunchedEffect(subscriptions) {
+        if (draggingSubscriptionId == null) {
+            orderedSubscriptions = subscriptions
         }
     }
 
@@ -145,19 +163,70 @@ fun SubscriptionScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(subscriptions, key = { it.id }) { subscription ->
+                items(orderedSubscriptions, key = { it.id }) { subscription ->
                     SubscriptionItem(
                         subscription = subscription,
                         onEdit = { editTarget = subscription },
                         onUpdate = { viewModel.updateSubscription(subscription) },
                         onDelete = { deleteTarget = subscription },
-                        isLoading = isLoading
+                        isLoading = isLoading,
+                        isDragging = draggingSubscriptionId == subscription.id,
+                        draggingOffsetY = if (draggingSubscriptionId == subscription.id) draggingOffsetY else 0f,
+                        onMove = { dragAmount ->
+                            if (!isLoading) {
+                                val currentId = draggingSubscriptionId ?: subscription.id
+                                if (draggingSubscriptionId == null) {
+                                    draggingSubscriptionId = currentId
+                                }
+                                draggingOffsetY += dragAmount
+                                val visibleItems = listState.layoutInfo.visibleItemsInfo
+                                val currentItem = visibleItems.firstOrNull { it.key == currentId }
+                                val currentIndex = orderedSubscriptions.indexOfFirst { it.id == currentId }
+                                if (currentItem != null && currentIndex >= 0) {
+                                    val currentCenter = currentItem.offset + draggingOffsetY + currentItem.size / 2f
+                                    val targetItem = visibleItems
+                                        .filter { it.key != currentId }
+                                        .firstOrNull { item ->
+                                            currentCenter in item.offset.toFloat()..(item.offset + item.size).toFloat()
+                                        }
+                                    if (targetItem != null) {
+                                        val targetIndex = orderedSubscriptions.indexOfFirst { it.id == targetItem.key }
+                                        if (targetIndex >= 0 && targetIndex != currentIndex) {
+                                            val mutable = orderedSubscriptions.toMutableList()
+                                            val moved = mutable.removeAt(currentIndex)
+                                            mutable.add(targetIndex, moved)
+                                            orderedSubscriptions = mutable
+                                            draggingOffsetY += currentItem.offset - targetItem.offset
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        onDragStart = {
+                            if (!isLoading) {
+                                draggingSubscriptionId = subscription.id
+                                draggingOffsetY = 0f
+                            }
+                        },
+                        onDragEnd = {
+                            if (draggingSubscriptionId != null) {
+                                viewModel.reorderSubscriptions(orderedSubscriptions)
+                            }
+                            draggingSubscriptionId = null
+                            draggingOffsetY = 0f
+                        },
+                        onDragCancel = {
+                            draggingSubscriptionId = null
+                            draggingOffsetY = 0f
+                            orderedSubscriptions = subscriptions
+                        }
                     )
                 }
             }
@@ -234,16 +303,42 @@ private fun SubscriptionItem(
     onEdit: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isDragging: Boolean,
+    draggingOffsetY: Float,
+    onMove: (Float) -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                translationY = draggingOffsetY
+            }
+            .zIndex(if (isDragging) 1f else 0f)
             .animateContentSize()
-            .combinedClickable(
-                onClick = onEdit,
-                onLongClick = onDelete
-            ),
+            .clickable(onClick = onEdit)
+            .pointerInput(subscription.id, isLoading) {
+                if (!isLoading) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            onDragStart()
+                        },
+                        onDragEnd = {
+                            onDragEnd()
+                        },
+                        onDragCancel = {
+                            onDragCancel()
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            onMove(dragAmount.y)
+                        }
+                    )
+                }
+            },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow

@@ -151,7 +151,7 @@ fun NodeListSheet(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             border = null
                         )
                     }

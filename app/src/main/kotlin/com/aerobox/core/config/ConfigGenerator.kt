@@ -359,7 +359,7 @@ object ConfigGenerator {
             .put("tag", "tun-in")
             .put("interface_name", "tun0")
             .put("address", tunAddresses)
-            .put("mtu", 9000)
+            .put("mtu", 1500)
             .put("auto_route", true)
             .put("strict_route", true)
             .put("stack", "system")

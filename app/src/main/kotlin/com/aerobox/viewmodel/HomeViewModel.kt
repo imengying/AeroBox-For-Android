@@ -2,6 +2,7 @@ package com.aerobox.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.os.Debug
 import android.content.Intent
 import android.net.VpnService
 import androidx.lifecycle.AndroidViewModel
@@ -94,6 +95,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionIssue = MutableStateFlow<ConnectionIssue?>(null)
     val connectionIssue: StateFlow<ConnectionIssue?> = _connectionIssue.asStateFlow()
 
+    private val _memoryUsage = MutableStateFlow("--")
+    val memoryUsage: StateFlow<String> = _memoryUsage.asStateFlow()
+
     private var detectIpJob: Job? = null
     private var connectWatchdogJob: Job? = null
     private val ipDetectClient = OkHttpClient.Builder()
@@ -106,6 +110,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         observeSelectedNode()
         observeConnectionDuration()
         observeNetworkInfoTriggers()
+        observeMemoryUsage()
         refreshNetworkInfo()
     }
 
@@ -148,6 +153,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     refreshNetworkInfo()
                 }
         }
+    }
+
+
+    private fun observeMemoryUsage() {
+        viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                _memoryUsage.value = readMemoryUsage()
+                delay(2_000)
+            }
+        }
+    }
+
+    private fun readMemoryUsage(): String {
+        return runCatching {
+            val info = Debug.MemoryInfo()
+            Debug.getMemoryInfo(info)
+            NetworkUtils.formatBytes(info.totalPss.toLong() * 1024L)
+        }.getOrDefault("--")
     }
 
 
@@ -260,7 +283,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectNode(node: ProxyNode) {
-        val previousNode = _selectedNode.value
         _selectedNode.value = node
         if (!vpnState.value.isConnected) {
             refreshNetworkInfo()
@@ -272,12 +294,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
             when (val result = vpnRepository.switchToNode(node)) {
                 is VpnConnectionResult.Success -> Unit
-                is VpnConnectionResult.InvalidConfig -> {
-                    restoreSelectedNode(previousNode)
-                    handleConnectionFailure(appContext, result.error)
-                }
+                is VpnConnectionResult.InvalidConfig -> handleConnectionFailure(appContext, result.error)
                 is VpnConnectionResult.Failure -> {
-                    restoreSelectedNode(previousNode)
                     val details = result.throwable.message?.takeIf { it.isNotBlank() }
                     if (details != null) {
                         handleConnectionFailure(appContext, details)
@@ -285,15 +303,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         appContext.showToast(appContext.getString(com.aerobox.R.string.operation_failed))
                     }
                 }
-                VpnConnectionResult.NoNodeAvailable -> restoreSelectedNode(previousNode)
+                VpnConnectionResult.NoNodeAvailable -> Unit
             }
         }
-    }
-
-    private suspend fun restoreSelectedNode(node: ProxyNode?) {
-        _selectedNode.value = node
-        PreferenceManager.setLastSelectedNodeId(appContext, node?.id ?: -1L)
-        refreshNetworkInfo()
     }
 
     fun testAllNodesLatency() {

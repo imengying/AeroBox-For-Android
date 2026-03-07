@@ -115,7 +115,7 @@ private fun SpeedMetric(
         }
         Text(
             text = speed,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -123,7 +123,7 @@ private fun SpeedMetric(
             modifier = Modifier.padding(top = 2.dp)
         )
         Text(
-            text = "$title $total",
+            text = total,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

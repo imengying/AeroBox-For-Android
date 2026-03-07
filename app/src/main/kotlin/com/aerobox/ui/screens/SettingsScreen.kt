@@ -82,7 +82,7 @@ fun SettingsScreen(
                 modifier = Modifier.clickable { onNavigateToSubscriptions() },
                 icon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
                 title = "订阅管理",
-                supporting = "添加、更新和管理代理订阅",
+                supporting = "添加、更新和管理订阅",
                 trailing = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             )
         }
@@ -143,11 +143,7 @@ fun SettingsScreen(
                 modifier = Modifier.clickable { onNavigateToRouting() },
                 icon = { Icon(AppIcons.Security, contentDescription = null) },
                 title = "路由",
-                supporting = if (enableGeoRules) {
-                    "${routingMode.displayName} · 规则已开启"
-                } else {
-                    "${routingMode.displayName} · 规则默认关闭"
-                },
+                supporting = "当前模式 · ${routingMode.displayName}",
                 trailing = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             )
         }

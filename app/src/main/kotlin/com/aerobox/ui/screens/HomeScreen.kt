@@ -66,6 +66,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
     val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
     val detectedIp by viewModel.detectedIp.collectAsStateWithLifecycle()
+    val memoryUsage by viewModel.memoryUsage.collectAsStateWithLifecycle()
     val connectionIssue by viewModel.connectionIssue.collectAsStateWithLifecycle()
     var showNodeList by remember { mutableStateOf(false) }
 
@@ -99,7 +100,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ConnectionCard(
                     isConnected = vpnState.isConnected,
                     isConnecting = isConnecting,
@@ -121,11 +122,23 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         }
                     },
                 )
+            }
+        }
 
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 NodeSelectorCard(
                     nodeName = selectedNode?.name ?: stringResource(R.string.not_selected),
                     nodeAddress = selectedNode?.type?.displayName() ?: "--",
-                    onClick = { showNodeList = true }
+                    onClick = { showNodeList = true },
+                    modifier = Modifier.weight(0.5f).height(100.dp)
+                )
+                TrafficStatsCard(
+                    stats = trafficStats,
+                    modifier = Modifier.weight(0.5f).height(100.dp)
                 )
             }
         }
@@ -139,8 +152,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
         item {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 NetworkDetectCard(
@@ -148,8 +160,8 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     onClick = { viewModel.refreshNetworkInfo() },
                     modifier = Modifier.weight(0.5f).height(100.dp)
                 )
-                TrafficStatsCard(
-                    stats = trafficStats,
+                MemoryUsageCard(
+                    memoryUsage = memoryUsage,
                     modifier = Modifier.weight(0.5f).height(100.dp)
                 )
             }
@@ -246,6 +258,43 @@ private fun ensureNotificationPermissionThenStart(
 }
 
 @Composable
+private fun MemoryUsageCard(
+    memoryUsage: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "内存占用",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = memoryUsage,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun NetworkDetectCard(
     ip: String,
     onClick: () -> Unit,
@@ -298,30 +347,27 @@ private fun NodeSelectorCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = nodeName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = nodeAddress,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+            Text(
+                text = nodeName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = nodeAddress,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

@@ -93,6 +93,13 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+
+    fun reorderSubscriptions(orderedSubscriptions: List<Subscription>) {
+        viewModelScope.launch {
+            repository.reorderSubscriptions(orderedSubscriptions)
+        }
+    }
+
     fun editSubscription(
         subscription: Subscription,
         name: String,

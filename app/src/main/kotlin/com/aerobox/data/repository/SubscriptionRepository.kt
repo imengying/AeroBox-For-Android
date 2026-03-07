@@ -106,6 +106,18 @@ class SubscriptionRepository(context: Context) {
         }
     }
 
+
+    suspend fun reorderSubscriptions(orderedSubscriptions: List<Subscription>) {
+        val baseTimestamp = System.currentTimeMillis()
+        database.withTransaction {
+            orderedSubscriptions.forEachIndexed { index, subscription ->
+                subscriptionDao.update(
+                    subscription.copy(createdAt = baseTimestamp - index)
+                )
+            }
+        }
+    }
+
     suspend fun updateSubscription(subscription: Subscription) {
         val prepared = prepareSubscriptionNodes(subscription.url)
         val updatedAt = System.currentTimeMillis()
