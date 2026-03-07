@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.aerobox.AeroBoxApplication
+import com.aerobox.core.logging.RuntimeLogBuffer
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import java.net.NetworkInterface
 
@@ -26,6 +27,7 @@ object DefaultNetworkMonitor {
         private set
 
     private var listener: InterfaceUpdateListener? = null
+    private var networkChangedCallback: ((Network?) -> Unit)? = null
     private var registered = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -37,6 +39,8 @@ object DefaultNetworkMonitor {
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             defaultNetwork = network
+            RuntimeLogBuffer.append("debug", "Default network available: $network")
+            networkChangedCallback?.invoke(network)
             notifyInterfaceUpdate(network)
         }
 
@@ -45,6 +49,8 @@ object DefaultNetworkMonitor {
             capabilities: NetworkCapabilities
         ) {
             if (network == defaultNetwork) {
+                RuntimeLogBuffer.append("debug", "Default network capabilities changed: $network")
+                networkChangedCallback?.invoke(network)
                 notifyInterfaceUpdate(network)
             }
         }
@@ -52,6 +58,8 @@ object DefaultNetworkMonitor {
         override fun onLost(network: Network) {
             if (network == defaultNetwork) {
                 defaultNetwork = null
+                RuntimeLogBuffer.append("warn", "Default network lost: $network")
+                networkChangedCallback?.invoke(null)
                 listener?.runCatching {
                     updateDefaultInterface("", -1, false, false)
                 }
@@ -71,6 +79,8 @@ object DefaultNetworkMonitor {
             Log.w(TAG, "Failed to register network callback", e)
         }
         defaultNetwork = cm.activeNetwork
+        networkChangedCallback?.invoke(defaultNetwork)
+        defaultNetwork?.let { notifyInterfaceUpdate(it) }
     }
 
     fun stop() {
@@ -81,6 +91,7 @@ object DefaultNetworkMonitor {
         registered = false
         defaultNetwork = null
         listener = null
+        networkChangedCallback = null
     }
 
     fun setListener(listener: InterfaceUpdateListener?) {
@@ -88,6 +99,11 @@ object DefaultNetworkMonitor {
         if (listener != null) {
             defaultNetwork?.let { notifyInterfaceUpdate(it) }
         }
+    }
+
+    fun setNetworkChangedCallback(callback: ((Network?) -> Unit)?) {
+        networkChangedCallback = callback
+        callback?.invoke(defaultNetwork)
     }
 
     private fun notifyInterfaceUpdate(network: Network) {
@@ -104,8 +120,13 @@ object DefaultNetworkMonitor {
 
         runCatching {
             listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
+            RuntimeLogBuffer.append(
+                "debug",
+                "Default interface updated: name=$interfaceName, index=$interfaceIndex"
+            )
         }.onFailure {
             Log.w(TAG, "updateDefaultInterface failed", it)
+            RuntimeLogBuffer.append("warn", "updateDefaultInterface failed: ${it.message ?: it}")
         }
     }
 }

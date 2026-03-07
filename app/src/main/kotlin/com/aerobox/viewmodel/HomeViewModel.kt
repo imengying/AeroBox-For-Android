@@ -34,8 +34,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URL
-import java.net.HttpURLConnection
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 enum class ConnectionFixAction(val label: String) {
     UPDATE_GEO("更新路由资源"),
@@ -95,6 +96,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var statsJob: Job? = null
     private var detectIpJob: Job? = null
     private var connectWatchdogJob: Job? = null
+    private val ipDetectClient = OkHttpClient.Builder()
+        .callTimeout(1, TimeUnit.SECONDS)
+        .connectTimeout(1, TimeUnit.SECONDS)
+        .readTimeout(1, TimeUnit.SECONDS)
+        .build()
 
     init {
         observeSelectedNode()
@@ -368,15 +374,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         for (group in endpointGroups) {
             for (endpoint in group) {
                 val ip = runCatching {
-                    val connection = URL(endpoint).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 700
-                    connection.readTimeout = 700
-                    connection.instanceFollowRedirects = true
-                    connection.useCaches = false
-                    try {
-                        connection.inputStream.bufferedReader().use { it.readText().trim() }
-                    } finally {
-                        connection.disconnect()
+                    val request = Request.Builder()
+                        .url(endpoint)
+                        .header("User-Agent", "AeroBox/IP-Check")
+                        .build()
+                    ipDetectClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) return@use null
+                        response.body?.string()?.trim()
                     }
                 }.getOrNull()
                 if (!ip.isNullOrBlank() && isLikelyIpAddress(ip)) {

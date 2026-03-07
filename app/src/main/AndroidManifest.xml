@@ -34,6 +34,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".NotificationSwitchActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.AeroBox.Translucent" />
+
         <service
             android:name=".service.AeroBoxVpnService"
             android:enabled="true"

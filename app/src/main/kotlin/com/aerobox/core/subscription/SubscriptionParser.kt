@@ -136,6 +136,11 @@ object SubscriptionParser {
             transportPath = if (network == "grpc") null else rawPath,
             transportServiceName = json.optString("serviceName", json.optString("service_name", ""))
                 .ifBlank { if (network == "grpc") rawPath else null },
+            packetEncoding = firstNonBlank(
+                json.optString("packetEncoding").ifBlank { null },
+                json.optString("packet-encoding").ifBlank { null },
+                json.optString("packet_encoding").ifBlank { null }
+            ),
             allowInsecure = parseBooleanField(
                 json.optString("allowInsecure"),
                 json.optString("allow_insecure")
@@ -177,6 +182,11 @@ object SubscriptionParser {
             fingerprint = params["fp"],
             publicKey = firstNonBlank(params["pbk"], params["public-key"], params["public_key"]),
             shortId = firstNonBlank(params["sid"], params["short-id"], params["short_id"]),
+            packetEncoding = firstNonBlank(
+                params["packetEncoding"],
+                params["packet-encoding"],
+                params["packet_encoding"]
+            ),
             allowInsecure = parseBooleanField(
                 params["allowInsecure"],
                 params["insecure"]
@@ -210,6 +220,11 @@ object SubscriptionParser {
                 params["serviceName"],
                 params["service_name"],
                 if (network == "grpc") params["path"] else null
+            ),
+            packetEncoding = firstNonBlank(
+                params["packetEncoding"],
+                params["packet-encoding"],
+                params["packet_encoding"]
             ),
             allowInsecure = parseBooleanField(
                 params["allowInsecure"],
@@ -379,6 +394,11 @@ object SubscriptionParser {
                 shortId = firstNonBlank(
                     obj.optString("short_id", obj.optString("sid", "")).ifBlank { null },
                     realityObject?.optString("short_id", "")?.ifBlank { null }
+                ),
+                packetEncoding = firstNonBlank(
+                    obj.optString("packet_encoding", obj.optString("packetEncoding", "")).ifBlank { null },
+                    transport?.optString("packet_encoding", "")?.ifBlank { null },
+                    transport?.optString("packetEncoding", "")?.ifBlank { null }
                 ),
                 username = obj.optString("username", "").ifBlank { null },
                 privateKey = obj.optString("private_key", "").ifBlank { null },

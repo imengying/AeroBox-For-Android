@@ -2,93 +2,40 @@ package com.aerobox.core.subscription
 
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.ProxyType
+import org.yaml.snakeyaml.Yaml
 
 /**
- * Lightweight Clash/ClashMeta YAML proxies parser.
- * Handles the `proxies:` section without requiring a full YAML library.
- *
- * Supports: Shadowsocks, VMess, VLESS, Trojan, Hysteria2, TUIC, WireGuard
+ * Clash/Clash Meta YAML parser.
+ * Only reads the `proxies:` list and maps each node into the app's internal model.
  */
 object ClashParser {
 
     fun parseClashYaml(content: String): List<ProxyNode> {
-        val proxiesBlock = extractProxiesBlock(content)
-        if (proxiesBlock.isBlank()) return emptyList()
-        val items = splitProxyItems(proxiesBlock)
-        return items.mapNotNull { parseProxyItem(it) }
+        val root = runCatching { Yaml().load<Any?>(content) }.getOrNull() ?: return emptyList()
+        val proxies = value(root, "proxies") as? List<*> ?: return emptyList()
+        return proxies.mapNotNull { parseProxyItem(it as? Map<*, *>) }
     }
 
-    /**
-     * Detect whether the content looks like a Clash YAML config.
-     */
     fun isClashYaml(content: String): Boolean {
         return content.contains("proxies:") &&
                 content.contains("- name:") &&
-                (content.contains("type:") || content.contains("  server:"))
+                (content.contains("type:") || content.contains("server:"))
     }
 
-    // ── Extract the `proxies:` block from the full YAML ──────────────
+    private fun parseProxyItem(map: Map<*, *>?): ProxyNode? {
+        if (map.isNullOrEmpty()) return null
 
-    private fun extractProxiesBlock(content: String): String {
-        val lines = content.lines()
-        var inProxies = false
-        val result = StringBuilder()
-
-        for (line in lines) {
-            val trimmed = line.trimStart()
-            if (!inProxies) {
-                if (trimmed.startsWith("proxies:")) {
-                    inProxies = true
-                }
-                continue
-            }
-            // If we hit another top-level key (no leading whitespace), stop
-            if (line.isNotBlank() && !line[0].isWhitespace() && !trimmed.startsWith("-") && !trimmed.startsWith("#")) {
-                break
-            }
-            result.appendLine(line)
-        }
-        return result.toString()
-    }
-
-    // ── Split the block into individual proxy item strings ───────────
-
-    private fun splitProxyItems(block: String): List<String> {
-        val items = mutableListOf<String>()
-        val current = StringBuilder()
-
-        for (line in block.lines()) {
-            val trimmed = line.trimStart()
-            if (trimmed.startsWith("- ")) {
-                if (current.isNotBlank()) {
-                    items.add(current.toString())
-                }
-                current.clear()
-                // Remove the leading "- " but keep remaining content
-                val indent = line.indexOf('-')
-                current.appendLine(" ".repeat(indent + 2) + trimmed.removePrefix("- "))
-            } else if (trimmed.isNotBlank() && !trimmed.startsWith("#")) {
-                current.appendLine(line)
-            }
-        }
-        if (current.isNotBlank()) items.add(current.toString())
-        return items
-    }
-
-    // ── Parse a single proxy item into key-value pairs ───────────────
-
-    private fun parseProxyItem(itemYaml: String): ProxyNode? {
-        val map = parseSimpleYamlMap(itemYaml)
-        if (map.isEmpty()) return null
-
-        val name = map["name"] ?: return null
-        val typeStr = (map["type"] ?: return null).lowercase()
-        val server = map["server"] ?: return null
-        val port = map["port"]?.toIntOrNull() ?: return null
+        val name = stringValue(map, "name") ?: return null
+        val typeStr = stringValue(map, "type")?.lowercase() ?: return null
+        val server = stringValue(map, "server") ?: return null
+        val port = intValue(map, "port") ?: return null
 
         val type = when (typeStr) {
             "ss", "shadowsocks" -> {
-                val method = map["cipher"] ?: map["method"] ?: ""
+                val method = firstNonBlank(
+                    stringValue(map, "cipher"),
+                    stringValue(map, "method")
+                ).orEmpty()
                 if (method.startsWith("2022-")) ProxyType.SHADOWSOCKS_2022 else ProxyType.SHADOWSOCKS
             }
             "vmess" -> ProxyType.VMESS
@@ -102,133 +49,188 @@ object ClashParser {
             else -> return null
         }
 
+        val security = firstNonBlank(
+            stringValue(map, "security"),
+            if (!stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
+                !stringValue(map, "reality-opts", "public_key").isNullOrBlank()) "reality" else null
+        )
+
         val tls = when {
             type == ProxyType.TROJAN || type == ProxyType.HYSTERIA2 || type == ProxyType.TUIC -> true
-            map["tls"]?.lowercase() == "true" -> true
-            map["security"]?.lowercase() in listOf("tls", "reality") -> true
-            !map["reality-opts-public-key"].isNullOrBlank() -> true
+            booleanValue(map, "tls") == true -> true
+            security?.lowercase() in listOf("tls", "reality") -> true
             else -> false
         }
 
-        val network = map["network"] ?: map["net"] ?: when {
-            map.containsKey("ws-opts-path") || map.containsKey("ws-opts-headers-Host") || map.containsKey("ws-path") -> "ws"
-            map.containsKey("grpc-opts-grpc-service-name") || map.containsKey("grpc-service-name") -> "grpc"
-            map.containsKey("h2-opts-path") || map.containsKey("h2-opts-host") -> "h2"
-            map.containsKey("http-opts-path") || map.containsKey("http-opts-host") || map.containsKey("http-opts-headers-Host") -> "http"
-            map.containsKey("http-upgrade-path") || map.containsKey("http-upgrade-host") -> "httpupgrade"
+        val network = firstNonBlank(
+            stringValue(map, "network"),
+            stringValue(map, "net")
+        ) ?: when {
+            hasValue(map, "ws-opts", "path") || hasValue(map, "ws-opts", "headers", "Host") || hasValue(map, "ws-path") -> "ws"
+            hasValue(map, "grpc-opts", "grpc-service-name") || hasValue(map, "grpc-service-name") -> "grpc"
+            hasValue(map, "h2-opts", "path") || hasValue(map, "h2-opts", "host") -> "h2"
+            hasValue(map, "http-opts", "path") || hasValue(map, "http-opts", "host") || hasValue(map, "http-opts", "headers", "Host") -> "http"
+            hasValue(map, "http-upgrade-path") || hasValue(map, "http-upgrade-host") -> "httpupgrade"
             else -> null
         }
         val normalizedNetwork = normalizeNetwork(network)
         val transportPath = firstNonBlank(
-            map["ws-opts-path"],
-            map["ws-path"],
-            map["h2-opts-path"],
-            map["http-opts-path"],
-            map["http-upgrade-path"],
-            map["path"]
+            stringValue(map, "ws-opts", "path"),
+            stringValue(map, "ws-path"),
+            stringValue(map, "h2-opts", "path"),
+            stringValue(map, "http-opts", "path"),
+            stringValue(map, "http-upgrade-path"),
+            stringValue(map, "path")
         )
         val transportHost = firstNonBlank(
-            map["ws-opts-headers-Host"],
-            map["ws-opts-host"],
-            map["h2-opts-host"],
-            map["http-opts-host"],
-            map["http-opts-headers-Host"],
-            map["http-upgrade-host"],
-            map["host"]
+            joinedValue(map, "ws-opts", "headers", "Host"),
+            joinedValue(map, "ws-opts", "headers", "host"),
+            joinedValue(map, "ws-opts", "host"),
+            joinedValue(map, "h2-opts", "host"),
+            joinedValue(map, "http-opts", "host"),
+            joinedValue(map, "http-opts", "headers", "Host"),
+            joinedValue(map, "http-opts", "headers", "host"),
+            joinedValue(map, "http-upgrade-host"),
+            joinedValue(map, "host")
         )
         val transportServiceName = firstNonBlank(
-            map["grpc-opts-grpc-service-name"],
-            map["grpc-service-name"],
-            map["service-name"],
-            map["serviceName"],
+            stringValue(map, "grpc-opts", "grpc-service-name"),
+            stringValue(map, "grpc-opts", "service-name"),
+            stringValue(map, "grpc-opts", "serviceName"),
+            stringValue(map, "grpc-service-name"),
+            stringValue(map, "service-name"),
+            stringValue(map, "serviceName"),
             if (normalizedNetwork == "grpc") transportPath else null
         )
 
-        val insecure = map["skip-cert-verify"]?.equals("true", true) == true
-                || map["allow-insecure"]?.equals("true", true) == true
+        val insecure = booleanValue(map, "skip-cert-verify") == true
+                || booleanValue(map, "allow-insecure") == true
+                || booleanValue(map, "insecure") == true
+
+        val fingerprint = firstNonBlank(
+            stringValue(map, "fingerprint"),
+            stringValue(map, "client-fingerprint"),
+            stringValue(map, "global-client-fingerprint")
+        )
+
+        val publicKey = firstNonBlank(
+            stringValue(map, "public-key"),
+            stringValue(map, "pbk"),
+            stringValue(map, "reality-opts", "public-key"),
+            stringValue(map, "reality-opts", "public_key")
+        )
+
+        val shortId = firstNonBlank(
+            stringValue(map, "short-id"),
+            stringValue(map, "sid"),
+            stringValue(map, "reality-opts", "short-id"),
+            stringValue(map, "reality-opts", "short_id"),
+            stringValue(map, "reality-opts", "shortid")
+        )
 
         return ProxyNode(
             name = name,
             type = type,
             server = server,
             port = port,
-            uuid = map["uuid"] ?: map["id"],
-            password = map["password"] ?: map["passwd"],
-            method = map["cipher"] ?: map["method"],
-            flow = map["flow"],
-            security = map["security"] ?: if (!map["reality-opts-public-key"].isNullOrBlank()) "reality" else null,
+            uuid = firstNonBlank(stringValue(map, "uuid"), stringValue(map, "id")),
+            password = firstNonBlank(
+                stringValue(map, "password"),
+                stringValue(map, "passwd"),
+                stringValue(map, "auth"),
+                stringValue(map, "token")
+            ),
+            method = firstNonBlank(stringValue(map, "cipher"), stringValue(map, "method")),
+            flow = stringValue(map, "flow"),
+            security = security,
             network = normalizedNetwork,
             tls = tls,
-            sni = map["sni"] ?: map["servername"],
+            sni = firstNonBlank(
+                stringValue(map, "sni"),
+                stringValue(map, "servername"),
+                stringValue(map, "server-name")
+            ),
             transportHost = transportHost,
             transportPath = if (normalizedNetwork == "grpc") null else transportPath,
             transportServiceName = transportServiceName,
-            alpn = map["alpn"],
-            fingerprint = map["fingerprint"] ?: map["client-fingerprint"],
-            publicKey = firstNonBlank(
-                map["public-key"],
-                map["pbk"],
-                map["reality-opts-public-key"]
+            alpn = joinedValue(map, "alpn"),
+            fingerprint = fingerprint,
+            publicKey = publicKey,
+            shortId = shortId,
+            packetEncoding = firstNonBlank(
+                stringValue(map, "packet-encoding"),
+                stringValue(map, "packet_encoding")
             ),
-            shortId = firstNonBlank(
-                map["short-id"],
-                map["sid"],
-                map["reality-opts-short-id"],
-                map["reality-opts-shortid"]
-            ),
-            username = map["username"],
-            privateKey = map["private-key"],
-            localAddress = map["ip"] ?: map["local-address"],
-            peerPublicKey = map["public-key"] ?: map["peer-public-key"],
-            preSharedKey = map["pre-shared-key"] ?: map["preshared-key"],
-            reserved = map["reserved"],
-            mtu = map["mtu"]?.toIntOrNull(),
+            username = stringValue(map, "username"),
+            privateKey = stringValue(map, "private-key"),
+            localAddress = firstNonBlank(stringValue(map, "ip"), stringValue(map, "local-address")),
+            peerPublicKey = firstNonBlank(stringValue(map, "peer-public-key"), publicKey),
+            preSharedKey = firstNonBlank(stringValue(map, "pre-shared-key"), stringValue(map, "preshared-key")),
+            reserved = joinedValue(map, "reserved"),
+            mtu = intValue(map, "mtu"),
             allowInsecure = insecure
         )
     }
 
-    // ── Lightweight flat YAML map parser ─────────────────────────────
-    // Handles only flat key: value pairs and simple inline lists.
-    // Nested maps (ws-opts, grpc-opts) are flattened with their parent key prefix.
-
-    private fun parseSimpleYamlMap(yaml: String): Map<String, String> {
-        val map = mutableMapOf<String, String>()
-        val parentStack = mutableListOf<Pair<Int, String>>()
-
-        for (line in yaml.lines()) {
-            val trimmed = line.trimStart()
-            if (trimmed.isBlank() || trimmed.startsWith("#")) continue
-
-            val indent = line.length - line.trimStart().length
-            val colonIndex = trimmed.indexOf(':')
-            if (colonIndex <= 0) continue
-
-            val key = trimmed.substring(0, colonIndex).trim()
-            val rawValue = trimmed.substring(colonIndex + 1).trim()
-            while (parentStack.isNotEmpty() && indent <= parentStack.last().first) {
-                parentStack.removeAt(parentStack.lastIndex)
-            }
-
-            // Detect nested block start (key with no value, e.g. "ws-opts:")
-            if (rawValue.isEmpty()) {
-                val prefix = (parentStack.lastOrNull()?.second?.let { "$it-$key" } ?: key)
-                parentStack.add(indent to prefix)
-                continue
-            }
-
-            val cleanValue = rawValue
-                .removeSurrounding("\"")
-                .removeSurrounding("'")
-                .let { if (it.startsWith("[") && it.endsWith("]")) {
-                    // Inline YAML array: [a, b] → "a,b"
-                    it.removeSurrounding("[", "]").split(",").joinToString(",") { s -> s.trim().removeSurrounding("\"").removeSurrounding("'") }
-                } else it }
-
-            val parentPrefix = parentStack.lastOrNull()?.second
-            val mapKey = parentPrefix?.let { "$it-$key" } ?: key
-            map[mapKey] = cleanValue
+    private fun value(source: Any?, vararg path: String): Any? {
+        var current: Any? = source
+        for (segment in path) {
+            val map = current as? Map<*, *> ?: return null
+            current = map.entries.firstOrNull { entry ->
+                entry.key?.toString()?.equals(segment, ignoreCase = true) == true
+            }?.value
         }
-        return map
+        return current
+    }
+
+    private fun hasValue(source: Any?, vararg path: String): Boolean {
+        return value(source, *path) != null
+    }
+
+    private fun stringValue(source: Any?, vararg path: String): String? {
+        return scalarString(value(source, *path))
+    }
+
+    private fun joinedValue(source: Any?, vararg path: String): String? {
+        val resolved = value(source, *path)
+        val parts = when (resolved) {
+            is List<*> -> resolved.mapNotNull { scalarString(it) }
+            else -> listOfNotNull(scalarString(resolved))
+        }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(",")
+    }
+
+    private fun intValue(source: Any?, vararg path: String): Int? {
+        val resolved = value(source, *path) ?: return null
+        return when (resolved) {
+            is Number -> resolved.toInt()
+            else -> resolved.toString().trim().toIntOrNull()
+        }
+    }
+
+    private fun booleanValue(source: Any?, vararg path: String): Boolean? {
+        val resolved = value(source, *path) ?: return null
+        return when (resolved) {
+            is Boolean -> resolved
+            is Number -> resolved.toInt() != 0
+            is String -> when (resolved.trim().lowercase()) {
+                "true", "yes", "on", "1" -> true
+                "false", "no", "off", "0" -> false
+                else -> null
+            }
+            else -> null
+        }
+    }
+
+    private fun scalarString(value: Any?): String? {
+        return when (value) {
+            null -> null
+            is String -> value.trim().takeIf { it.isNotEmpty() }
+            is Number, is Boolean -> value.toString()
+            else -> null
+        }
     }
 
     private fun normalizeNetwork(value: String?): String? {

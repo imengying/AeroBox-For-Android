@@ -74,6 +74,7 @@ class VpnRepository(private val context: Context) {
                 node.transportServiceName?.takeIf { it.isNotBlank() }?.let { append(", service=").append(it) }
                 node.alpn?.takeIf { it.isNotBlank() }?.let { append(", alpn=").append(it) }
                 node.fingerprint?.takeIf { it.isNotBlank() }?.let { append(", fp=").append(it) }
+                node.packetEncoding?.takeIf { it.isNotBlank() }?.let { append(", packetEncoding=").append(it) }
                 if (!node.publicKey.isNullOrBlank()) append(", reality=true")
                 if (node.allowInsecure) append(", insecure=true")
             }

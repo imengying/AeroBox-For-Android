@@ -41,7 +41,7 @@ object ConfigGenerator {
         config.put(
             "log",
             JSONObject()
-                .put("level", "info")
+                .put("level", "debug")
                 .put("timestamp", true)
         )
 
@@ -403,6 +403,7 @@ object ConfigGenerator {
         enableGeoBlockQuic: Boolean = true
     ): JSONObject {
         val route = JSONObject()
+            .put("auto_detect_interface", true)
             .put("default_domain_resolver", "local")
 
         val ruleSets = JSONArray()
@@ -538,6 +539,7 @@ object ConfigGenerator {
                 outbound.put("uuid", node.uuid ?: "")
                 outbound.put("security", node.security ?: "auto")
                 outbound.put("alter_id", 0)
+                node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 
@@ -545,12 +547,14 @@ object ConfigGenerator {
                 outbound.put("type", "vless")
                 outbound.put("uuid", node.uuid ?: "")
                 node.flow?.let { outbound.put("flow", it) }
+                node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node, includeReality = true))
             }
 
             ProxyType.TROJAN -> {
                 outbound.put("type", "trojan")
                 outbound.put("password", node.password ?: "")
+                node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 

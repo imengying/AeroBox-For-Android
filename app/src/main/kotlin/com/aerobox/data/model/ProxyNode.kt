@@ -50,6 +50,7 @@ data class ProxyNode(
     val fingerprint: String? = null,
     val publicKey: String? = null,
     val shortId: String? = null,
+    val packetEncoding: String? = null,
     val subscriptionId: Long = 0,
     val latency: Int = -1,
     val createdAt: Long = System.currentTimeMillis(),

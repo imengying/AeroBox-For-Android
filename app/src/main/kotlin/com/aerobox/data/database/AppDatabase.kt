@@ -8,7 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.Subscription
 
-@Database(entities = [ProxyNode::class, Subscription::class], version = 5, exportSchema = false)
+@Database(entities = [ProxyNode::class, Subscription::class], version = 6, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun subscriptionDao(): SubscriptionDao

@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
@@ -14,9 +15,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aerobox.AeroBoxApplication
 import com.aerobox.MainActivity
+import com.aerobox.NotificationSwitchActivity
 import com.aerobox.R
 import com.aerobox.core.logging.RuntimeLogBuffer
-import com.aerobox.data.repository.VpnRepository
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.utils.PreferenceManager
 import io.nekohasekai.libbox.CommandServer
@@ -50,7 +51,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     companion object {
         const val ACTION_START = "com.aerobox.action.START"
         const val ACTION_STOP = "com.aerobox.action.STOP"
-        const val ACTION_SWITCH = "com.aerobox.action.SWITCH"
         const val EXTRA_CONFIG = "extra_config"
         const val EXTRA_NODE_ID = "extra_node_id"
         const val NOTIFICATION_ID = 1001
@@ -79,10 +79,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     stopService("Stopping service: notification action")
                     stopSelf()
                 }
-
-                ACTION_SWITCH -> {
-                    switchNodeFromNotification()
-                }
             }
         }
     }
@@ -107,9 +103,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 stopService("Stopping service: ACTION_STOP intent")
                 stopSelf()
             }
-            ACTION_SWITCH -> {
-                switchNodeFromNotification()
-            }
         }
         return START_STICKY
     }
@@ -129,7 +122,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 if (!receiverRegistered) {
                     val filter = IntentFilter().apply {
                         addAction(ACTION_STOP)
-                        addAction(ACTION_SWITCH)
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         registerReceiver(closeReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -139,6 +131,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     receiverRegistered = true
                 }
 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                    DefaultNetworkMonitor.setNetworkChangedCallback(::updateUnderlyingNetwork)
+                }
                 DefaultNetworkMonitor.start()
 
                 val server = commandServer ?: CommandServer(this@AeroBoxVpnService, this@AeroBoxVpnService).also {
@@ -156,48 +151,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 RuntimeLogBuffer.append("error", "startVpn failed: ${e.message ?: e}")
                 VpnStateManager.updateLastError(e.message ?: e.toString())
                 stopService("Stopping service after start failure")
-            }
-        }
-    }
-
-    private fun switchNodeFromNotification() {
-        serviceScope.launch {
-            runCatching {
-                val nodes = AeroBoxApplication.database.proxyNodeDao().getAllNodes().first()
-                if (nodes.isEmpty()) {
-                    Log.w(TAG, "No nodes available for switch action")
-                    RuntimeLogBuffer.append("warn", "No nodes available for switch action")
-                    return@runCatching
-                }
-
-                val selectedId = PreferenceManager.lastSelectedNodeIdFlow(applicationContext).first()
-                val currentId = if (selectedId > 0L) selectedId else lastNodeId
-                val currentIndex = nodes.indexOfFirst { it.id == currentId }
-                val nextNode = if (currentIndex >= 0) {
-                    nodes[(currentIndex + 1) % nodes.size]
-                } else {
-                    nodes.first()
-                }
-
-                PreferenceManager.setLastSelectedNodeId(applicationContext, nextNode.id)
-
-                val vpnRepository = VpnRepository(applicationContext)
-                val nextConfig = vpnRepository.buildConfig(nextNode)
-                val configError = vpnRepository.checkConfig(nextConfig)
-                if (configError != null) {
-                    Log.e(TAG, "Switch node config invalid: $configError")
-                    RuntimeLogBuffer.append("error", "Switch node config invalid: $configError")
-                    return@runCatching
-                }
-
-                userRequestedStop = false
-                reconnectAttempts = 0
-                lastNodeId = nextNode.id
-                lastConfig = nextConfig
-                startVpn(nextConfig)
-            }.onFailure { e ->
-                Log.e(TAG, "switchNodeFromNotification failed", e)
-                RuntimeLogBuffer.append("error", "switchNodeFromNotification failed: ${e.message ?: e}")
             }
         }
     }
@@ -324,7 +277,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     // ─── PlatformInterfaceWrapper overrides ───
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        protect(fd)
+        if (!protect(fd)) {
+            RuntimeLogBuffer.append("warn", "protect($fd) failed")
+        }
     }
 
     override fun openTun(options: TunOptions): Int {
@@ -336,6 +291,20 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             .setMtu(options.mtu)
 
         builder.setMetered(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            DefaultNetworkMonitor.defaultNetwork?.let { network ->
+                runCatching {
+                    builder.setUnderlyingNetworks(arrayOf(network))
+                }.onSuccess {
+                    RuntimeLogBuffer.append("debug", "Builder underlying network set: $network")
+                }.onFailure {
+                    RuntimeLogBuffer.append(
+                        "warn",
+                        "Builder setUnderlyingNetworks failed: ${it.message ?: it}"
+                    )
+                }
+            }
+        }
 
         val inet4Addresses = mutableListOf<Pair<String, Int>>()
         val inet4Address = options.inet4Address
@@ -445,8 +414,32 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         val notification = buildNotification(connected = true)
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         nm.notify(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
+        }
         startSpeedTicker()
         return pfd.fd
+    }
+
+    private fun updateUnderlyingNetwork(network: Network?) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return
+        runCatching {
+            setUnderlyingNetworks(network?.let { arrayOf(it) })
+        }.onSuccess {
+            RuntimeLogBuffer.append(
+                "debug",
+                if (network != null) {
+                    "Underlying network applied: $network"
+                } else {
+                    "Underlying network cleared"
+                }
+            )
+        }.onFailure {
+            RuntimeLogBuffer.append(
+                "warn",
+                "setUnderlyingNetworks failed: ${it.message ?: it}"
+            )
+        }
     }
 
     // ─── Notification ───
@@ -458,14 +451,20 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
-        val switchIntent = Intent(ACTION_SWITCH).setPackage(packageName)
         val stopPendingIntent = PendingIntent.getBroadcast(
             this,
             101,
             stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val switchPendingIntent = PendingIntent.getBroadcast(
+        val switchIntent = Intent(this, NotificationSwitchActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                    Intent.FLAG_ACTIVITY_NO_HISTORY
+            )
+        }
+        val switchPendingIntent = PendingIntent.getActivity(
             this,
             102,
             switchIntent,
