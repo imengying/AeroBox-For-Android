@@ -157,6 +157,70 @@ jobs:
                   print(f"{line_no}:{line}")
           PY
 
+          cat > experimental/libbox/urltest_export.go <<'EOF'
+          package libbox
+
+          import (
+              "context"
+              "time"
+
+              box "github.com/sagernet/sing-box"
+              "github.com/sagernet/sing-box/adapter"
+              "github.com/sagernet/sing-box/common/urltest"
+              E "github.com/sagernet/sing/common/exceptions"
+              "github.com/sagernet/sing/service"
+          )
+
+          func URLTestOutbound(configContent string, outboundTag string, testURL string, timeout int32) (int32, error) {
+              ctx := baseContext(nil)
+              options, err := parseConfig(ctx, configContent)
+              if err != nil {
+                  return 0, err
+              }
+
+              ctx, cancel := context.WithCancel(ctx)
+              defer cancel()
+              ctx = service.ContextWith[adapter.PlatformInterface](ctx, (*platformInterfaceStub)(nil))
+
+              instance, err := box.New(box.Options{
+                  Context: ctx,
+                  Options: options,
+              })
+              if err != nil {
+                  return 0, err
+              }
+              defer instance.Close()
+
+              if err = instance.Start(); err != nil {
+                  return 0, err
+              }
+
+              if outboundTag == "" {
+                  outboundTag = "proxy"
+              }
+              outboundToTest, loaded := instance.Outbound().Outbound(outboundTag)
+              if !loaded || outboundToTest == nil {
+                  return 0, E.New("outbound not found: ", outboundTag)
+              }
+
+              testCtx := ctx
+              if timeout > 0 {
+                  var timeoutCancel context.CancelFunc
+                  testCtx, timeoutCancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
+                  defer timeoutCancel()
+              }
+
+              delay, err := urltest.URLTest(testCtx, testURL, outboundToTest)
+              if err != nil {
+                  return 0, err
+              }
+              return int32(delay), nil
+          }
+          EOF
+          gofmt -w experimental/libbox/urltest_export.go
+          echo "--- added experimental/libbox/urltest_export.go ---"
+          sed -n '1,200p' experimental/libbox/urltest_export.go
+
           # Build with gomobile bind directly (no need to patch build_libbox)
           mkdir -p "${GITHUB_WORKSPACE}/app/build/libbox"
           gomobile bind -v \

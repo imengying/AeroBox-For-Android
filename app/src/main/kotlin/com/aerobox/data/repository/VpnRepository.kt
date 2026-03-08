@@ -9,7 +9,6 @@ import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.native.SingBoxNative
 import com.aerobox.data.model.ProxyNode
-import com.aerobox.service.AeroBoxTileService
 import com.aerobox.service.AeroBoxVpnService
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
@@ -74,15 +73,12 @@ class VpnRepository(private val context: Context) {
             val config = buildConfig(node)
             val configError = checkConfig(config)
             if (configError != null) {
-                AeroBoxTileService.clearActiveHint()
                 VpnConnectionResult.InvalidConfig(configError)
             } else {
                 action(config)
-                AeroBoxTileService.showActive(node.name)
                 VpnConnectionResult.Success(node)
             }
         }.getOrElse { error ->
-            AeroBoxTileService.clearActiveHint()
             VpnConnectionResult.Failure(error)
         }
     }
@@ -99,7 +95,6 @@ class VpnRepository(private val context: Context) {
     }
 
     fun stopVpn() {
-        AeroBoxTileService.clearActiveHint()
         RuntimeLogBuffer.append("info", "Sending ACTION_STOP to VPN service")
         val intent = Intent(context, AeroBoxVpnService::class.java).apply {
             action = AeroBoxVpnService.ACTION_STOP
@@ -113,6 +108,24 @@ class VpnRepository(private val context: Context) {
             RuntimeLogBuffer.append("error", "Config check failed: $error")
         }
         return error
+    }
+
+    suspend fun urlTestNode(
+        node: ProxyNode,
+        testUrl: String = "https://www.gstatic.com/generate_204",
+        timeoutMs: Int = 3000
+    ): Int {
+        val localDns = PreferenceManager.localDnsFlow(context).first()
+        val config = ConfigGenerator.generateUrlTestConfig(
+            node = node,
+            localDns = localDns
+        )
+        return SingBoxNative.urlTestOutbound(
+            configContent = config,
+            outboundTag = "proxy",
+            testUrl = testUrl,
+            timeoutMs = timeoutMs
+        )
     }
 
     suspend fun buildConfig(node: ProxyNode): String {

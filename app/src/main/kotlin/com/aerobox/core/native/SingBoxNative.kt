@@ -59,4 +59,19 @@ object SingBoxNative {
             "unknown"
         }
     }
+
+    fun urlTestOutbound(
+        configContent: String,
+        outboundTag: String = "proxy",
+        testUrl: String = "https://www.gstatic.com/generate_204",
+        timeoutMs: Int = 3000
+    ): Int {
+        return try {
+            Libbox.urlTestOutbound(configContent, outboundTag, testUrl, timeoutMs).toInt()
+        } catch (e: Exception) {
+            val msg = e.message ?: "unknown error"
+            Log.w(TAG, "urlTestOutbound failed: $msg")
+            -1
+        }
+    }
 }

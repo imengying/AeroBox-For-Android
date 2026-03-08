@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.net.URI
 
 object ConfigGenerator {
+    private const val PROXY_OUTBOUND_TAG = "proxy"
 
     private data class DnsServerSpec(
         val type: String,
@@ -57,7 +58,7 @@ object ConfigGenerator {
         )
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
 
-        val proxyOutbound = buildProxyOutbound(node).put("tag", "proxy")
+        val proxyOutbound = buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG)
         config.put(
             "outbounds",
             JSONArray()
@@ -80,6 +81,44 @@ object ConfigGenerator {
         )
 
         return config.toString(2)
+    }
+
+    fun generateUrlTestConfig(
+        node: ProxyNode,
+        localDns: String = "223.5.5.5"
+    ): String {
+        val config = JSONObject()
+        config.put(
+            "log",
+            JSONObject()
+                .put("level", "error")
+                .put("timestamp", false)
+        )
+        config.put(
+            "dns",
+            buildDns(
+                remoteDns = "8.8.8.8",
+                localDns = localDns,
+                enableDoh = false,
+                routingMode = RoutingMode.DIRECT,
+                enableGeoCnDomainRule = false
+            )
+        )
+        config.put("inbounds", JSONArray())
+        config.put(
+            "outbounds",
+            JSONArray()
+                .put(buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG))
+                .put(JSONObject().put("type", "direct").put("tag", "direct"))
+        )
+        config.put(
+            "route",
+            JSONObject()
+                .put("auto_detect_interface", false)
+                .put("default_domain_resolver", "bootstrap")
+                .put("final", "direct")
+        )
+        return config.toString()
     }
 
     // ── DNS ──────────────────────────────────────────────────────────

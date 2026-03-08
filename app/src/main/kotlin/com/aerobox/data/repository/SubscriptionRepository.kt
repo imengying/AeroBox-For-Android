@@ -32,6 +32,12 @@ data class SubscriptionImportResult(
 )
 
 class SubscriptionRepository(context: Context) {
+    private companion object {
+        private const val SUBSCRIPTION_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     private val database = AeroBoxApplication.database
     private val subscriptionDao = database.subscriptionDao()
     private val proxyNodeDao = database.proxyNodeDao()
@@ -196,7 +202,7 @@ class SubscriptionRepository(context: Context) {
         suspendCancellableCoroutine { cont ->
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "ClashForAndroid/2.5.12")
+                .header("User-Agent", SUBSCRIPTION_USER_AGENT)
                 .build()
             val call = client.newCall(request)
             cont.invokeOnCancellation { call.cancel() }

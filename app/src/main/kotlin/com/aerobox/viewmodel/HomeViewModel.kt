@@ -41,6 +41,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,6 +51,8 @@ import java.util.concurrent.TimeUnit
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val POST_CONNECT_IP_DETECT_DELAY_MS = 500L
+        const val NODE_TEST_TIMEOUT_MS = 3000
+        const val NODE_TEST_CONCURRENCY = 4
     }
 
     private val appContext = application.applicationContext
@@ -319,9 +323,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testSubscriptionNodesLatency(nodes: List<ProxyNode>) {
         viewModelScope.launch {
+            val semaphore = Semaphore(NODE_TEST_CONCURRENCY)
             val jobs = nodes.map { node ->
                 launch {
-                    val latency = testNodeLatency(node)
+                    val latency = semaphore.withPermit { testNodeLatency(node) }
                     subscriptionRepository.updateNodeLatency(node.id, latency)
                 }
             }
@@ -346,7 +351,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun testNodeLatency(node: ProxyNode): Int {
-        return com.aerobox.utils.NetworkUtils.pingTcp(node.server, node.port)
+        return vpnRepository.urlTestNode(
+            node = node,
+            timeoutMs = NODE_TEST_TIMEOUT_MS
+        )
     }
 
     fun refreshNetworkInfo() {

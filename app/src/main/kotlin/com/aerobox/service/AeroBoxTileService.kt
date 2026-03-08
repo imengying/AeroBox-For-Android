@@ -1,26 +1,25 @@
 package com.aerobox.service
 
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
 import com.aerobox.R
 import com.aerobox.core.connection.ConnectionDiagnostics
+import com.aerobox.data.model.VpnState
 import com.aerobox.data.repository.VpnConnectionResult
 import com.aerobox.data.repository.VpnRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -30,91 +29,34 @@ class AeroBoxTileService : TileService() {
 
     companion object {
         private const val TAG = "AeroBoxTileService"
-        private const val ACTION_TILE_STATE_CHANGED = "com.aerobox.action.TILE_STATE_CHANGED"
-        private const val EXTRA_TILE_ACTIVE = "extra_tile_active"
-        private const val EXTRA_TILE_LABEL = "extra_tile_label"
-        private val mainHandler = Handler(Looper.getMainLooper())
-
-        @Volatile
-        private var listeningService: AeroBoxTileService? = null
-
-        @Volatile
-        private var activeTileHint = false
-
-        @Volatile
-        private var activeTileLabelHint: String? = null
-
-        fun showActive(label: String? = null) {
-            publishState(active = true, label = label)
-        }
-
-        fun clearActiveHint() {
-            publishState(active = false, label = null)
-        }
-
-        fun publishState(active: Boolean, label: String? = null) {
-            activeTileHint = active
-            activeTileLabelHint = label?.takeIf { it.isNotBlank() }
-            dispatchTileState(activeTileHint, activeTileLabelHint)
-            requestRefresh()
-        }
-
-        private fun dispatchTileState(active: Boolean, label: String?) {
-            val context = runCatching { com.aerobox.AeroBoxApplication.appInstance }.getOrNull() ?: return
-            val intent = Intent(ACTION_TILE_STATE_CHANGED)
-                .setPackage(context.packageName)
-                .putExtra(EXTRA_TILE_ACTIVE, active)
-                .putExtra(EXTRA_TILE_LABEL, label)
-            context.sendBroadcast(intent)
-        }
-
-        fun requestRefresh() {
-            val activeService = listeningService ?: return
-            mainHandler.post { activeService.updateTileState() }
-        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var tileStateReceiverRegistered = false
-    private val tileStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != ACTION_TILE_STATE_CHANGED) return
-            updateTile(
-                active = intent.getBooleanExtra(EXTRA_TILE_ACTIVE, false),
-                labelOverride = intent.getStringExtra(EXTRA_TILE_LABEL)
-            )
-        }
-    }
+    private var tileStateJob: Job? = null
 
     override fun onStartListening() {
         super.onStartListening()
-        listeningService = this
-        registerTileStateReceiver()
-        updateTileState()
+        tileStateJob?.cancel()
+        tileStateJob = serviceScope.launch {
+            combine(
+                VpnStateManager.serviceActive,
+                VpnStateManager.vpnState
+            ) { serviceActive, vpnState ->
+                Pair(serviceActive, vpnState)
+            }.collect { (serviceActive, vpnState) ->
+                updateTileFromState(serviceActive, vpnState)
+            }
+        }
+        updateTileFromState(
+            serviceActive = VpnStateManager.serviceActive.value,
+            vpnState = VpnStateManager.vpnState.value
+        )
     }
 
     override fun onStopListening() {
-        unregisterTileStateReceiver()
-        listeningService = null
+        tileStateJob?.cancel()
+        tileStateJob = null
         super.onStopListening()
-    }
-
-    private fun registerTileStateReceiver() {
-        if (tileStateReceiverRegistered) return
-        val filter = IntentFilter(ACTION_TILE_STATE_CHANGED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(tileStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(tileStateReceiver, filter)
-        }
-        tileStateReceiverRegistered = true
-    }
-
-    private fun unregisterTileStateReceiver() {
-        if (!tileStateReceiverRegistered) return
-        runCatching { unregisterReceiver(tileStateReceiver) }
-        tileStateReceiverRegistered = false
     }
 
     override fun onClick() {
@@ -124,12 +66,10 @@ class AeroBoxTileService : TileService() {
 
         if (isServiceActive) {
             // Stop VPN
-            clearActiveHint()
             val intent = Intent(this, AeroBoxVpnService::class.java).apply {
                 action = AeroBoxVpnService.ACTION_STOP
             }
             startService(intent)
-            updateTile(false)
         } else {
             // Start VPN — need VPN permission first
             val permissionIntent = VpnService.prepare(this)
@@ -165,10 +105,9 @@ class AeroBoxTileService : TileService() {
                 }
 
                 is VpnConnectionResult.Success -> {
-                    showActive(result.node.name)
-                    updateTile(
-                        active = true,
-                        labelOverride = result.node.name.takeIf { it.isNotBlank() }
+                    updateTileFromState(
+                        serviceActive = true,
+                        vpnState = VpnStateManager.vpnState.value.copy(currentNode = result.node)
                     )
                 }
 
@@ -190,9 +129,9 @@ class AeroBoxTileService : TileService() {
         }
     }
 
-    private fun updateTileState() {
-        val active = AeroBoxVpnService.isServiceActive.value || activeTileHint
-        updateTile(active = active, labelOverride = activeTileLabelHint)
+    private fun updateTileFromState(serviceActive: Boolean, vpnState: VpnState) {
+        val active = serviceActive || vpnState.isConnected
+        updateTile(active = active, labelOverride = vpnState.currentNode?.name)
     }
 
     private fun updateTile(active: Boolean, labelOverride: String? = null) {
@@ -217,10 +156,8 @@ class AeroBoxTileService : TileService() {
     }
 
     override fun onDestroy() {
-        unregisterTileStateReceiver()
-        if (listeningService === this) {
-            listeningService = null
-        }
+        tileStateJob?.cancel()
+        tileStateJob = null
         serviceScope.cancel()
         super.onDestroy()
     }
