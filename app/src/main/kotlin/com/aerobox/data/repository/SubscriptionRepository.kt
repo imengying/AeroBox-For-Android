@@ -3,6 +3,7 @@ package com.aerobox.data.repository
 import android.content.Context
 import androidx.room.withTransaction
 import com.aerobox.AeroBoxApplication
+import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.subscription.SubscriptionParser
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.Subscription
@@ -207,6 +208,18 @@ class SubscriptionRepository(context: Context) {
                             cont.resumeWithException(IOException("HTTP ${it.code}"))
                         } else {
                             val content = it.body?.string() ?: ""
+                            val relevantHeaders = it.headers.names()
+                                .filter { name ->
+                                    name.contains("subscription", ignoreCase = true) ||
+                                        name.contains("profile", ignoreCase = true)
+                                }
+                                .sorted()
+                            val rawUserInfo = it.header("Subscription-Userinfo")
+                            RuntimeLogBuffer.append(
+                                "debug",
+                                "Subscription fetch headers: userinfo=${!rawUserInfo.isNullOrBlank()}, " +
+                                    "relevant=${relevantHeaders.joinToString(",").ifBlank { "none" }}"
+                            )
                             val userInfo = extractSubscriptionUserInfo(it)
                             cont.resume(
                                 SubscriptionFetchResult(

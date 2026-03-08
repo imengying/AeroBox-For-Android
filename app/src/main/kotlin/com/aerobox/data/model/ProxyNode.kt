@@ -27,6 +27,12 @@ enum class ProxyType {
     }
 }
 
+object NodeLatencyState {
+    const val UNTESTED = -1
+    const val TESTING = -2
+    const val FAILED = -3
+}
+
 @Entity(tableName = "proxy_nodes")
 data class ProxyNode(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -51,7 +57,7 @@ data class ProxyNode(
     val shortId: String? = null,
     val packetEncoding: String? = null,
     val subscriptionId: Long = 0,
-    val latency: Int = -1,
+    val latency: Int = NodeLatencyState.UNTESTED,
     val createdAt: Long = System.currentTimeMillis(),
     // SOCKS/HTTP auth
     val username: String? = null,

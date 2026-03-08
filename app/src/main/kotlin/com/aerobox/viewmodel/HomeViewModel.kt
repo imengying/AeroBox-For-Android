@@ -13,6 +13,7 @@ import com.aerobox.core.connection.ConnectionFixAction
 import com.aerobox.core.connection.ConnectionIssue
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.data.model.ProxyNode
+import com.aerobox.data.model.NodeLatencyState
 import com.aerobox.data.model.RoutingMode
 import com.aerobox.data.model.TrafficStats
 import com.aerobox.data.model.VpnState
@@ -326,8 +327,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val semaphore = Semaphore(NODE_TEST_CONCURRENCY)
             val jobs = nodes.map { node ->
                 launch {
+                    subscriptionRepository.updateNodeLatency(node.id, NodeLatencyState.TESTING)
                     val latency = semaphore.withPermit { testNodeLatency(node) }
-                    subscriptionRepository.updateNodeLatency(node.id, latency)
+                    subscriptionRepository.updateNodeLatency(
+                        node.id,
+                        latency.takeIf { it > 0 } ?: NodeLatencyState.FAILED
+                    )
                 }
             }
             jobs.forEach { it.join() }
@@ -345,8 +350,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testSingleNodeLatency(node: ProxyNode) {
         viewModelScope.launch {
+            subscriptionRepository.updateNodeLatency(node.id, NodeLatencyState.TESTING)
             val latency = testNodeLatency(node)
-            subscriptionRepository.updateNodeLatency(node.id, latency)
+            subscriptionRepository.updateNodeLatency(
+                node.id,
+                latency.takeIf { it > 0 } ?: NodeLatencyState.FAILED
+            )
         }
     }
 

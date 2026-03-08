@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aerobox.data.model.NodeLatencyState
 import com.aerobox.data.model.ProxyNode
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -262,7 +263,9 @@ private fun NodeItem(
 @Composable
 private fun LatencyBadge(latency: Int, onClick: () -> Unit) {
     val (color, text) = when {
-        latency < 0 -> MaterialTheme.colorScheme.outline to "测速"
+        latency == NodeLatencyState.TESTING -> MaterialTheme.colorScheme.primary to "测试中"
+        latency == NodeLatencyState.FAILED -> MaterialTheme.colorScheme.error to "超时"
+        latency == NodeLatencyState.UNTESTED -> MaterialTheme.colorScheme.outline to "测速"
         latency < 100 -> MaterialTheme.colorScheme.primary to "${latency}ms"
         latency < 300 -> MaterialTheme.colorScheme.tertiary to "${latency}ms"
         else -> MaterialTheme.colorScheme.error to "${latency}ms"
