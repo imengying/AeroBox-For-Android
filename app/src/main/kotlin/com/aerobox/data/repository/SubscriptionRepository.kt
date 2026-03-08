@@ -32,12 +32,6 @@ data class SubscriptionImportResult(
 )
 
 class SubscriptionRepository(context: Context) {
-    private companion object {
-        private const val SUBSCRIPTION_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
     private val database = AeroBoxApplication.database
     private val subscriptionDao = database.subscriptionDao()
     private val proxyNodeDao = database.proxyNodeDao()
@@ -275,6 +269,9 @@ class SubscriptionRepository(context: Context) {
     )
 
     companion object {
+        private const val SUBSCRIPTION_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
         const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
         const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"
