@@ -266,7 +266,8 @@ class SubscriptionRepository(context: Context) {
                 "debug",
                 "Subscription fetch headers hop=$hopIndex: " +
                     "explicit=${explicitHeaders.distinct().joinToString(",").ifBlank { "none" }}, " +
-                    "token=${tokenHeaders.distinct().joinToString(",").ifBlank { "none" }}"
+                    "token=${tokenHeaders.distinct().joinToString(",").ifBlank { "none" }}, " +
+                    "all_keys=${headerNames.joinToString(",")}"
             )
             hopIndex += 1
             hop = currentHop.priorResponse
@@ -321,7 +322,7 @@ class SubscriptionRepository(context: Context) {
     )
 
     companion object {
-        private const val SUBSCRIPTION_USER_AGENT = "Clash/1.9.0"
+        private const val SUBSCRIPTION_USER_AGENT = "clash-verge/v1.3.8"
         const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
         const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
         const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"

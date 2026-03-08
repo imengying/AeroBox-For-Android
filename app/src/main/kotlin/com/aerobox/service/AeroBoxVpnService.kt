@@ -464,11 +464,12 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val switchIntent = Intent(this, NotificationSwitchActivity::class.java).apply {
+        val switchIntent = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_SWITCH
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
-                    Intent.FLAG_ACTIVITY_NO_HISTORY
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
             )
         }
         val switchPendingIntent = PendingIntent.getActivity(

@@ -91,6 +91,14 @@ object ConfigGenerator {
                 .put("level", "error")
                 .put("timestamp", false)
         )
+        config.put(
+            "dns",
+            JSONObject().put(
+                "servers", JSONArray().put(
+                    JSONObject().put("tag", "local").put("address", "local")
+                )
+            )
+        )
         config.put("inbounds", JSONArray())
         config.put(
             "outbounds",
