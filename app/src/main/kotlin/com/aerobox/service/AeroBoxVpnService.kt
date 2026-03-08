@@ -18,6 +18,7 @@ import com.aerobox.MainActivity
 import com.aerobox.NotificationSwitchActivity
 import com.aerobox.R
 import com.aerobox.core.logging.RuntimeLogBuffer
+import com.aerobox.core.native.SingBoxNative
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.utils.PreferenceManager
 import io.nekohasekai.libbox.CommandServer
