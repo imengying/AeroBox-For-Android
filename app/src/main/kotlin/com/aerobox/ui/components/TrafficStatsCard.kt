@@ -43,7 +43,7 @@ fun TrafficStatsCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -58,7 +58,6 @@ fun TrafficStatsCard(
                         title = stringResource(R.string.upload),
                         prefix = "↑",
                         speed = NetworkUtils.formatSpeed(stats.uploadSpeed),
-                        total = NetworkUtils.formatBytesCompact(stats.totalUpload),
                         modifier = Modifier.weight(1f)
                     )
                     Box(
@@ -74,7 +73,6 @@ fun TrafficStatsCard(
                         title = stringResource(R.string.download),
                         prefix = "↓",
                         speed = NetworkUtils.formatSpeed(stats.downloadSpeed),
-                        total = NetworkUtils.formatBytesCompact(stats.totalDownload),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -88,12 +86,12 @@ private fun SpeedMetric(
     title: String,
     prefix: String,
     speed: String,
-    total: String,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -115,21 +113,11 @@ private fun SpeedMetric(
         }
         Text(
             text = speed,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp)
-        )
-        Text(
-            text = total,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Start,
-            modifier = Modifier.padding(top = 2.dp)
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

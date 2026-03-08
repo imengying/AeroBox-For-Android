@@ -68,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.R
 import com.aerobox.data.model.Subscription
+import com.aerobox.utils.NetworkUtils
 import com.aerobox.viewmodel.SubscriptionViewModel
 import kotlinx.coroutines.flow.collectLatest
 import java.text.SimpleDateFormat
@@ -351,39 +352,22 @@ private fun SubscriptionItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                buildTrafficInfoText(subscription)?.let { trafficText ->
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "${subscription.nodeCount} 个节点",
+                        text = trafficText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    if (subscription.updateTime > 0) {
-                        Text(
-                            text = " · ",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                        Text(
-                            text = formatTime(subscription.updateTime),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = if (subscription.autoUpdate) {
-                        stringResource(
-                            R.string.subscription_auto_update_status,
-                            formatInterval(subscription.updateInterval)
-                        )
-                    } else {
-                        stringResource(R.string.subscription_manual_update_status)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                buildExpiryInfoText(subscription)?.let { expiryText ->
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = expiryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
 
             Spacer(Modifier.width(8.dp))
@@ -443,6 +427,41 @@ private fun SubscriptionItem(
                 )
             }
         }
+    }
+}
+
+private fun buildTrafficInfoText(subscription: Subscription): String? {
+    val hasTrafficInfo = subscription.totalBytes > 0 || subscription.uploadBytes > 0 || subscription.downloadBytes > 0
+    if (!hasTrafficInfo) return null
+
+    val remainingBytes = (subscription.totalBytes - subscription.uploadBytes - subscription.downloadBytes)
+        .coerceAtLeast(0L)
+    return if (subscription.totalBytes > 0) {
+        "${NetworkUtils.formatBytesCompact(remainingBytes)} / ${NetworkUtils.formatBytesCompact(subscription.totalBytes)}"
+    } else {
+        NetworkUtils.formatBytesCompact(remainingBytes)
+    }
+}
+
+private fun buildExpiryInfoText(subscription: Subscription): String? {
+    return when {
+        subscription.expireTimestamp > 0L -> formatExpiry(subscription.expireTimestamp)
+        buildTrafficInfoText(subscription) != null -> "长期有效"
+        else -> null
+    }
+}
+
+private fun formatExpiry(expireTimestamp: Long): String {
+    val timestampMillis = if (expireTimestamp < 10_000_000_000L) expireTimestamp * 1000 else expireTimestamp
+    val remainMs = timestampMillis - System.currentTimeMillis()
+    if (remainMs <= 0L) return "已过期"
+
+    val days = remainMs / (24 * 60 * 60 * 1000)
+    val hours = (remainMs / (60 * 60 * 1000)) % 24
+    return when {
+        days > 0 -> "${days}天${hours}小时"
+        hours > 0 -> "${hours}小时"
+        else -> "不足1小时"
     }
 }
 
@@ -553,19 +572,6 @@ private fun SubscriptionEditorDialog(
             }
         }
     )
-}
-
-private fun formatTime(timestamp: Long): String {
-    return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
-}
-
-private fun formatInterval(intervalMs: Long): String {
-    val minutes = (intervalMs / 60_000L).coerceAtLeast(1L)
-    return when {
-        minutes % (24L * 60L) == 0L -> "${minutes / (24L * 60L)} 天"
-        minutes % 60L == 0L -> "${minutes / 60L} 小时"
-        else -> "$minutes 分钟"
-    }
 }
 
 private const val MIN_INTERVAL_MINUTES = 15L

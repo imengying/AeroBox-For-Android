@@ -98,12 +98,13 @@ fun NodeListSheet(
                             }.thenBy { (subId, _) -> subscriptionNames[subId] ?: "未分组" }
                         )
                 }
+                val groupIds = remember(grouped) { grouped.map { it.first } }
                 var selectedSubscriptionId by remember { mutableStateOf<Long?>(null) }
-                LaunchedEffect(grouped, selectedNodeId) {
+                LaunchedEffect(selectedNodeId, groupIds) {
                     val selectedGroupId = grouped.firstOrNull { (_, groupNodes) ->
                         groupNodes.any { it.id == selectedNodeId }
                     }?.first
-                    val hasCurrent = grouped.any { (subId, _) -> subId == selectedSubscriptionId }
+                    val hasCurrent = groupIds.contains(selectedSubscriptionId)
                     selectedSubscriptionId = when {
                         selectedGroupId != null -> selectedGroupId
                         hasCurrent -> selectedSubscriptionId
