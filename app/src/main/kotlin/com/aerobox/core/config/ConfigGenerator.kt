@@ -278,6 +278,7 @@ object ConfigGenerator {
 
     private fun normalizeLocalDnsAddress(localDns: String): String {
         val trimmed = localDns.trim()
+        if (trimmed == "[ipv4]" || trimmed == "[ipv6]") return "223.5.5.5"
         return if (trimmed.isBlank()) "https://dns.alidns.com/dns-query" else trimmed
     }
 
@@ -318,7 +319,8 @@ object ConfigGenerator {
 
             else -> {
                 val (server, port) = parseHostAndPort(trimmed, 53)
-                DnsServerSpec("udp", server, port)
+                val safeServer = if (server == "[ipv4]" || server == "[ipv6]") "1.1.1.1" else server
+                DnsServerSpec("udp", safeServer, port)
             }
         }
     }
