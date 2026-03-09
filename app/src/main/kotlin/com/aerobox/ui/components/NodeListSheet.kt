@@ -265,7 +265,7 @@ private fun NodeItem(
 private fun LatencyBadge(latency: Int, onClick: () -> Unit) {
     val (color, text) = when {
         latency == NodeLatencyState.TESTING -> MaterialTheme.colorScheme.primary to "测试中"
-        latency == NodeLatencyState.FAILED -> MaterialTheme.colorScheme.error to "超时"
+        latency == NodeLatencyState.FAILED -> MaterialTheme.colorScheme.error to "失败"
         latency == NodeLatencyState.UNTESTED -> MaterialTheme.colorScheme.outline to "测速"
         latency < 100 -> MaterialTheme.colorScheme.primary to "${latency}ms"
         latency < 300 -> MaterialTheme.colorScheme.tertiary to "${latency}ms"

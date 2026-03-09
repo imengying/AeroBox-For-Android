@@ -25,7 +25,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RoutingMode.GLOBAL_PROXY)
 
     val remoteDns: StateFlow<String> = PreferenceManager.remoteDnsFlow(appContext)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "8.8.8.8")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "1.1.1.1")
 
     val localDns: StateFlow<String> = PreferenceManager.localDnsFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "223.5.5.5")

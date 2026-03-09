@@ -60,7 +60,7 @@ object PreferenceManager {
         }
 
     fun remoteDnsFlow(context: Context): Flow<String> =
-        context.dataStore.data.map { it[REMOTE_DNS] ?: "8.8.8.8" }
+        context.dataStore.data.map { it[REMOTE_DNS] ?: "1.1.1.1" }
 
     fun localDnsFlow(context: Context): Flow<String> =
         context.dataStore.data.map { it[LOCAL_DNS] ?: "223.5.5.5" }

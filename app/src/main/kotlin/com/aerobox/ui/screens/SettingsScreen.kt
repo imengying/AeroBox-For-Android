@@ -319,7 +319,7 @@ private fun DnsSettingsDialog(
                     value = remote,
                     onValueChange = { remote = it },
                     label = { Text("远程 DNS") },
-                    supportingText = { Text("示例: tls://8.8.8.8, https://1.1.1.1/dns-query") },
+                    supportingText = { Text("示例: tls://1.1.1.1, https://cloudflare-dns.com/dns-query") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

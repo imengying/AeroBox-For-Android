@@ -20,7 +20,7 @@ object ConfigGenerator {
     fun generateSingBoxConfig(
         node: ProxyNode,
         routingMode: RoutingMode = RoutingMode.RULE_BASED,
-        remoteDns: String = "8.8.8.8",
+        remoteDns: String = "1.1.1.1",
         localDns: String = "223.5.5.5",
         enableDoh: Boolean = true,
         enableSocksInbound: Boolean = false,
@@ -97,7 +97,7 @@ object ConfigGenerator {
         config.put(
             "dns",
             buildDns(
-                remoteDns = "8.8.8.8",
+                remoteDns = "1.1.1.1",
                 localDns = localDns,
                 enableDoh = false,
                 routingMode = RoutingMode.DIRECT,
@@ -211,7 +211,7 @@ object ConfigGenerator {
     private fun normalizeRemoteDnsAddress(remoteDns: String, enableDoh: Boolean): String {
         val trimmed = remoteDns.trim()
         if (trimmed.isBlank()) {
-            return if (enableDoh) "https://dns.google/dns-query" else "8.8.8.8"
+            return if (enableDoh) "https://cloudflare-dns.com/dns-query" else "1.1.1.1"
         }
 
         if (enableDoh) {
