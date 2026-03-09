@@ -12,7 +12,7 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:backgroundDimEnabled">false</item>
-        <item name="android:windowBackgroundBlurRadius">0</item>
+        <item name="android:windowBackgroundBlurRadius">0dp</item>
         <item name="android:windowBlurBehindEnabled">false</item>
     </style>
 </resources>
