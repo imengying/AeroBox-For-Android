@@ -116,7 +116,7 @@ object ConfigGenerator {
             JSONObject()
                 .put("auto_detect_interface", false)
                 .put("default_domain_resolver", "local")
-                .put("final", "direct")
+                .put("final", PROXY_OUTBOUND_TAG)
         )
         return config.toString()
     }

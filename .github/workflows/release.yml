@@ -162,12 +162,19 @@ jobs:
 
           import (
               "context"
+              "crypto/tls"
+              "net"
+              "net/http"
+              "net/url"
               "time"
 
               box "github.com/sagernet/sing-box"
               "github.com/sagernet/sing-box/adapter"
-              "github.com/sagernet/sing-box/common/urltest"
+              C "github.com/sagernet/sing-box/constant"
+              "github.com/sagernet/sing-box/option"
               E "github.com/sagernet/sing/common/exceptions"
+              M "github.com/sagernet/sing/common/metadata"
+              "github.com/sagernet/sing/common/ntp"
               "github.com/sagernet/sing/service"
           )
 
@@ -175,32 +182,63 @@ jobs:
               ctx := baseContext(nil)
               options, err := parseConfig(ctx, configContent)
               if err != nil {
-                  return 0, err
+                  return 0, E.Cause(err, "parse config")
               }
 
               ctx, cancel := context.WithCancel(ctx)
               defer cancel()
               ctx = service.ContextWith[adapter.PlatformInterface](ctx, (*platformInterfaceStub)(nil))
 
+              if outboundTag == "" {
+                  outboundTag = "proxy"
+              }
+              if options.Route == nil {
+                  options.Route = &option.RouteOptions{}
+              }
+              options.Route.Final = outboundTag
+
               instance, err := box.New(box.Options{
                   Context: ctx,
                   Options: options,
               })
               if err != nil {
-                  return 0, err
+                  return 0, E.Cause(err, "create box")
               }
               defer instance.Close()
 
-              if err = instance.Start(); err != nil {
-                  return 0, err
+              if err = instance.PreStart(); err != nil {
+                  return 0, E.Cause(err, "pre-start box")
               }
 
-              if outboundTag == "" {
-                  outboundTag = "proxy"
+              dialer := instance.Outbound().Default()
+              if dialer == nil {
+                  return 0, E.New("default outbound not available")
               }
-              outboundToTest, loaded := instance.Outbound().Outbound(outboundTag)
-              if !loaded || outboundToTest == nil {
-                  return 0, E.New("outbound not found: ", outboundTag)
+
+              if testURL == "" {
+                  testURL = "https://www.gstatic.com/generate_204"
+              }
+              parsedURL, err := url.Parse(testURL)
+              if err != nil {
+                  return 0, E.Cause(err, "parse test url")
+              }
+              if parsedURL.Scheme == "" {
+                  parsedURL.Scheme = "https"
+              }
+              hostname := parsedURL.Hostname()
+              if hostname == "" {
+                  return 0, E.New("missing test url host")
+              }
+              port := parsedURL.Port()
+              if port == "" {
+                  switch parsedURL.Scheme {
+                  case "http":
+                      port = "80"
+                  case "https":
+                      port = "443"
+                  default:
+                      return 0, E.New("unsupported test url scheme: ", parsedURL.Scheme)
+                  }
               }
 
               testCtx := ctx
@@ -210,11 +248,36 @@ jobs:
                   defer timeoutCancel()
               }
 
-              delay, err := urltest.URLTest(testCtx, testURL, outboundToTest)
-              if err != nil {
-                  return 0, err
+              httpClient := &http.Client{
+                  Transport: &http.Transport{
+                      ForceAttemptHTTP2:   true,
+                      TLSHandshakeTimeout: C.TCPTimeout,
+                      DialContext: func(reqCtx context.Context, network, addr string) (net.Conn, error) {
+                          return dialer.DialContext(reqCtx, network, M.ParseSocksaddrHostPortStr(hostname, port))
+                      },
+                      TLSClientConfig: &tls.Config{
+                          Time:    ntp.TimeFuncFromContext(testCtx),
+                          RootCAs: adapter.RootPoolFromContext(testCtx),
+                      },
+                  },
+                  CheckRedirect: func(req *http.Request, via []*http.Request) error {
+                      return http.ErrUseLastResponse
+                  },
               }
-              return int32(delay), nil
+              defer httpClient.CloseIdleConnections()
+
+              request, err := http.NewRequestWithContext(testCtx, http.MethodHead, parsedURL.String(), nil)
+              if err != nil {
+                  return 0, E.Cause(err, "build test request")
+              }
+
+              start := time.Now()
+              response, err := httpClient.Do(request)
+              if err != nil {
+                  return 0, E.Cause(err, "perform url test")
+              }
+              response.Body.Close()
+              return int32(time.Since(start) / time.Millisecond), nil
           }
           EOF
           gofmt -w experimental/libbox/urltest_export.go

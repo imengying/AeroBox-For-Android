@@ -116,11 +116,6 @@ class VpnRepository(private val context: Context) {
         timeoutMs: Int = 3000
     ): Int {
         return withContext(Dispatchers.IO) {
-            val versionBefore = SingBoxNative.getVersion()
-            if (versionBefore == "unknown") {
-                SingBoxNative.setup(context)
-                RuntimeLogBuffer.append("debug", "SingBoxNative.setup() retried in urlTestNode")
-            }
             RuntimeLogBuffer.append("debug", "SingBoxNative.version=${SingBoxNative.getVersion()}")
             val userLocalDns = PreferenceManager.localDnsFlow(context).first()
             val safeLocalDns = if (userLocalDns.contains("[")) "223.5.5.5" else userLocalDns
@@ -128,7 +123,6 @@ class VpnRepository(private val context: Context) {
                 node = node,
                 localDns = safeLocalDns
             )
-            RuntimeLogBuffer.append("debug", "urlTest generated config: \n$config")
             RuntimeLogBuffer.append(
                 "debug",
                 "urlTest start: node=${node.name.ifBlank { "unnamed node" }}, timeout=${timeoutMs}ms"
