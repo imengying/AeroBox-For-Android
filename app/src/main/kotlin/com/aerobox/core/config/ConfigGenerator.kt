@@ -574,12 +574,12 @@ object ConfigGenerator {
             ProxyType.SHADOWSOCKS_2022 -> {
                 outbound.put("type", "shadowsocks")
                 outbound.put("method", node.method ?: "aes-128-gcm")
-                outbound.put("password", node.password ?: "")
+                node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
             }
 
             ProxyType.VMESS -> {
                 outbound.put("type", "vmess")
-                outbound.put("uuid", node.uuid ?: "")
+                node.uuid?.takeIf { it.isNotBlank() }?.let { outbound.put("uuid", it) }
                 outbound.put("security", node.security ?: "auto")
                 outbound.put("alter_id", 0)
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
@@ -588,29 +588,29 @@ object ConfigGenerator {
 
             ProxyType.VLESS -> {
                 outbound.put("type", "vless")
-                outbound.put("uuid", node.uuid ?: "")
-                node.flow?.let { outbound.put("flow", it) }
+                node.uuid?.takeIf { it.isNotBlank() }?.let { outbound.put("uuid", it) }
+                node.flow?.takeIf { it.isNotBlank() }?.let { outbound.put("flow", it) }
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node, includeReality = true))
             }
 
             ProxyType.TROJAN -> {
                 outbound.put("type", "trojan")
-                outbound.put("password", node.password ?: "")
+                node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 
             ProxyType.HYSTERIA2 -> {
                 outbound.put("type", "hysteria2")
-                outbound.put("password", node.password ?: "")
+                node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 
             ProxyType.TUIC -> {
                 outbound.put("type", "tuic")
-                outbound.put("uuid", node.uuid ?: "")
-                outbound.put("password", node.password ?: "")
+                node.uuid?.takeIf { it.isNotBlank() }?.let { outbound.put("uuid", it) }
+                node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 
@@ -644,7 +644,8 @@ object ConfigGenerator {
         if (node.allowInsecure) {
             tls.put("insecure", true)
         }
-        node.sni?.let { tls.put("server_name", it) }
+        val sniToUse = node.sni?.takeIf { it.isNotBlank() } ?: if (includeReality) node.server else null
+        sniToUse?.let { tls.put("server_name", it) }
 
         if (!node.alpn.isNullOrBlank()) {
             val alpnArray = JSONArray()
@@ -655,13 +656,13 @@ object ConfigGenerator {
         }
 
         if (includeReality && !node.publicKey.isNullOrBlank()) {
-            tls.put(
-                "reality",
-                JSONObject()
-                    .put("enabled", true)
-                    .put("public_key", node.publicKey)
-                    .put("short_id", node.shortId ?: "")
-            )
+            val realityObj = JSONObject()
+                .put("enabled", true)
+                .put("public_key", node.publicKey)
+            if (!node.shortId.isNullOrBlank()) {
+                realityObj.put("short_id", node.shortId)
+            }
+            tls.put("reality", realityObj)
         }
 
         if (!node.fingerprint.isNullOrBlank()) {

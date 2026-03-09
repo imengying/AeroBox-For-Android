@@ -133,6 +133,11 @@ class VpnRepository(private val context: Context) {
                 "debug",
                 "urlTest start: node=${node.name.ifBlank { "unnamed node" }}, timeout=${timeoutMs}ms"
             )
+            val parseError = checkConfig(config)
+            if (parseError != null) {
+                RuntimeLogBuffer.append("error", "urlTest parsing aborted: $parseError")
+                return@withContext -1
+            }
             val result = SingBoxNative.urlTestOutbound(
                 configContent = config,
                 outboundTag = "proxy",
