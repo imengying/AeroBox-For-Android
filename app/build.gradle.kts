@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.aerobox"
-    compileSdk = 35
+    compileSdk = 36
 
     val ciVersionName = (project.findProperty("AEROBOX_VERSION_NAME") as? String)?.trim()
     val ciVersionCode = (project.findProperty("AEROBOX_VERSION_CODE") as? String)
@@ -16,7 +16,7 @@ android {
     defaultConfig {
         applicationId = "com.aerobox"
         minSdk = 31
-        targetSdk = 35
+        targetSdk = 36
         versionCode = ciVersionCode ?: 1
         versionName = ciVersionName ?: "1.0.0"
 

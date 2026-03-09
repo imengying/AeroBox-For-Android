@@ -64,7 +64,7 @@ object SingBoxNative {
     fun urlTestOutbound(
         configContent: String,
         outboundTag: String = "proxy",
-        testUrl: String = "https://www.gstatic.com/generate_204",
+        testUrl: String = "http://cp.cloudflare.com/",
         timeoutMs: Int = 3000
     ): Int {
         return try {

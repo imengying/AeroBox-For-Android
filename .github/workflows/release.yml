@@ -217,7 +217,7 @@ jobs:
               }
 
               if testURL == "" {
-                  testURL = "https://www.gstatic.com/generate_204"
+                  testURL = "http://cp.cloudflare.com/"
               }
               delay, err := urltest.URLTest(testCtx, testURL, outbound)
               if err != nil {
