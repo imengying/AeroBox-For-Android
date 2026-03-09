@@ -1,6 +1,7 @@
 package com.aerobox
 
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.aerobox.core.connection.ConnectionDiagnostics
@@ -123,11 +129,36 @@ private fun NotificationSwitchDialog(
             )
     }
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        val view = LocalView.current
+        DisposableEffect(view) {
+            val window = (view.parent as? DialogWindowProvider)?.window
+            window?.apply {
+                setDimAmount(0f)
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    setBackgroundBlurRadius(0)
+                    attributes = attributes.apply {
+                        blurBehindRadius = 0
+                    }
+                }
+            }
+            onDispose { }
+        }
+
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -135,81 +166,81 @@ private fun NotificationSwitchDialog(
                     .padding(16.dp)
             ) {
                 Text(
-                text = "切换节点",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-            )
-            
-            var selectedGroupIndex by remember { mutableStateOf(0) }
-            
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 8.dp)
-            ) {
-                items(count = groupedNodes.size) { index ->
-                    val (subId, _) = groupedNodes[index]
-                    val groupName = subscriptionNames.firstOrNull { it.id == subId }?.name ?: "未分组"
-                    FilterChip(
-                        selected = selectedGroupIndex == index,
-                        onClick = { selectedGroupIndex = index },
-                        label = { Text(groupName) }
-                    )
-                }
-            }
+                    text = "切换节点",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
 
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 380.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 4.dp)
-            ) {
-                if (groupedNodes.isNotEmpty() && selectedGroupIndex < groupedNodes.size) {
-                    val (_, nodes) = groupedNodes[selectedGroupIndex]
-                    items(nodes, key = { it.id }) { node ->
-                        val isSelected = node.id == selectedNodeId
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = pendingNodeId == null) {
-                                    pendingNodeId = node.id
-                                    onNodeSelected(node)
-                                },
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
-                            ) {
-                                Text(
-                                    text = node.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = buildString {
-                                        append(node.type.displayName())
-                                        if (isSelected) append(" · 当前")
+                var selectedGroupIndex by remember { mutableStateOf(0) }
+
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
+                    items(count = groupedNodes.size) { index ->
+                        val (subId, _) = groupedNodes[index]
+                        val groupName = subscriptionNames.firstOrNull { it.id == subId }?.name ?: "未分组"
+                        FilterChip(
+                            selected = selectedGroupIndex == index,
+                            onClick = { selectedGroupIndex = index },
+                            label = { Text(groupName) }
+                        )
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    if (groupedNodes.isNotEmpty() && selectedGroupIndex < groupedNodes.size) {
+                        val (_, nodes) = groupedNodes[selectedGroupIndex]
+                        items(nodes, key = { it.id }) { node ->
+                            val isSelected = node.id == selectedNodeId
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = pendingNodeId == null) {
+                                        pendingNodeId = node.id
+                                        onNodeSelected(node)
                                     },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+                                ) {
+                                    Text(
+                                        text = node.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = buildString {
+                                            append(node.type.displayName())
+                                            if (isSelected) append(" · 当前")
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("取消")
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("取消")
+                }
             }
         }
     }
-}
 }

@@ -36,7 +36,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -67,11 +66,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aerobox.AeroBoxApplication
 import com.aerobox.R
 import com.aerobox.data.model.Subscription
-import com.aerobox.data.model.SubscriptionInfo
-import com.aerobox.data.model.info
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.viewmodel.SubscriptionViewModel
 import kotlinx.coroutines.flow.collectLatest
@@ -325,6 +321,16 @@ private fun SubscriptionItem(
         },
         label = "subscription_drag_color"
     )
+    val trafficText = if (subscription.trafficBytes > 0) {
+        "${stringResource(R.string.subscription_traffic)} ${NetworkUtils.formatBytes(subscription.trafficBytes)}"
+    } else {
+        null
+    }
+    val expiryText = if (subscription.expireTimestamp > 0) {
+        "${stringResource(R.string.subscription_expire)} ${formatSubscriptionDate(subscription.expireTimestamp)}"
+    } else {
+        null
+    }
 
     Card(
         modifier = Modifier
@@ -365,37 +371,28 @@ private fun SubscriptionItem(
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
-                buildTrafficInfoText(subscription.info)?.let { trafficText ->
+
+                if (trafficText != null || expiryText != null) {
                     Spacer(Modifier.height(6.dp))
+                }
+
+                trafficText?.let { infoText ->
                     Text(
-                        text = trafficText,
+                        text = infoText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(
-                        progress = { subscription.info.progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                buildRemainingInfoText(subscription.info)?.let { remainingText ->
-                    Spacer(Modifier.height(4.dp))
+
+                expiryText?.let { infoText ->
                     Text(
-                        text = remainingText,
+                        text = infoText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                buildExpiryInfoText(subscription.info)?.let { expiryText ->
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = expiryText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -460,6 +457,10 @@ private fun SubscriptionItem(
     }
 }
 
+private fun formatSubscriptionDate(timestampMs: Long): String {
+    return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestampMs))
+}
+
 @Composable
 private fun buildRelativeTimeText(timestampMs: Long): String {
     if (timestampMs <= 0L) return "从未更新"
@@ -472,41 +473,6 @@ private fun buildRelativeTimeText(timestampMs: Long): String {
     if (hours < 24) return "${hours}小时前"
     val days = hours / 24
     return "${days}天前"
-}
-
-private fun buildTrafficInfoText(info: SubscriptionInfo): String? {
-    if (!info.hasTrafficQuota) return null
-    return "${NetworkUtils.formatBytesCompact(info.usedBytes)} / ${NetworkUtils.formatBytesCompact(info.totalBytes)}"
-}
-
-private fun buildRemainingInfoText(info: SubscriptionInfo): String? {
-    if (!info.hasTrafficQuota) return null
-    return AeroBoxApplication.appInstance.getString(
-        R.string.subscription_traffic_remaining,
-        NetworkUtils.formatBytesCompact(info.remainingBytes)
-    )
-}
-
-private fun buildExpiryInfoText(info: SubscriptionInfo): String? {
-    return when {
-        info.hasExpiry -> formatExpiry(info.expireTimestamp)
-        buildTrafficInfoText(info) != null -> AeroBoxApplication.appInstance.getString(R.string.subscription_no_expiry)
-        else -> null
-    }
-}
-
-private fun formatExpiry(expireTimestamp: Long): String {
-    val timestampMillis = if (expireTimestamp < 10_000_000_000L) expireTimestamp * 1000 else expireTimestamp
-    val remainMs = timestampMillis - System.currentTimeMillis()
-    if (remainMs <= 0L) return "已过期"
-
-    val days = remainMs / (24 * 60 * 60 * 1000)
-    val hours = (remainMs / (60 * 60 * 1000)) % 24
-    return when {
-        days > 0 -> "${days}天${hours}小时"
-        hours > 0 -> "${hours}小时"
-        else -> "不足1小时"
-    }
 }
 
 @Composable

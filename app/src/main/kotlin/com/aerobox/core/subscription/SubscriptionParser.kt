@@ -10,6 +10,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+data class ParsedSubscription(
+    val nodes: List<ProxyNode>,
+    val trafficBytes: Long = 0,
+    val expireTimestamp: Long = 0
+)
 
 object SubscriptionParser {
     private val trafficInfoPrefixes = listOf(
@@ -89,23 +100,27 @@ object SubscriptionParser {
 
     private val timestampValuePattern = Regex("^\\d{10,13}$")
 
-    suspend fun parseSubscription(content: String): List<ProxyNode> = withContext(Dispatchers.Default) {
+    suspend fun parseSubscription(content: String): List<ProxyNode> {
+        return parseSubscriptionContent(content).nodes
+    }
+
+    suspend fun parseSubscriptionContent(content: String): ParsedSubscription = withContext(Dispatchers.Default) {
         runCatching {
             val normalized = content.trim()
             if (normalized.isBlank()) {
-                return@runCatching emptyList()
+                return@runCatching ParsedSubscription(emptyList())
             }
 
             // Check for Clash/ClashMeta YAML format first
             if (ClashParser.isClashYaml(normalized)) {
-                return@runCatching sanitizeClashNodes(ClashParser.parseClashYaml(normalized))
+                return@runCatching parseClashSubscription(normalized)
             }
 
             val base64Decoded = tryBase64Decode(normalized)
 
             // Also check if Base64-decoded content is Clash YAML
             if (base64Decoded != normalized && ClashParser.isClashYaml(base64Decoded)) {
-                return@runCatching sanitizeClashNodes(ClashParser.parseClashYaml(base64Decoded))
+                return@runCatching parseClashSubscription(base64Decoded)
             }
 
             val targetContent = when {
@@ -122,8 +137,18 @@ object SubscriptionParser {
                 else -> emptyList()
             }
 
-            dedupeNodes(nodes)
-        }.getOrDefault(emptyList())
+            ParsedSubscription(nodes = dedupeNodes(nodes))
+        }.getOrDefault(ParsedSubscription(emptyList()))
+    }
+
+    private fun parseClashSubscription(content: String): ParsedSubscription {
+        val rawNodes = ClashParser.parseClashYaml(content)
+        val infoNodes = rawNodes.filter(::isInformationalNode)
+        return ParsedSubscription(
+            nodes = sanitizeClashNodes(rawNodes),
+            trafficBytes = infoNodes.mapNotNull { extractTrafficBytes(it.name) }.firstOrNull() ?: 0L,
+            expireTimestamp = infoNodes.mapNotNull { extractExpireTimestamp(it.name) }.firstOrNull() ?: 0L
+        )
     }
 
     private fun sanitizeClashNodes(nodes: List<ProxyNode>): List<ProxyNode> {
@@ -138,33 +163,135 @@ object SubscriptionParser {
     }
 
     private fun isInformationalNode(node: ProxyNode): Boolean {
-        val normalizedName = node.name
+        val info = parseInformationalNode(node.name) ?: return false
+        return when {
+            info.prefix.matchesAnyPrefix(resetInfoPrefixes) -> {
+                relativeTimeValuePattern.matches(info.value) || dateValuePattern.matches(info.value) || timestampValuePattern.matches(info.value)
+            }
+            info.prefix.matchesAnyPrefix(expiryInfoPrefixes) -> {
+                dateValuePattern.matches(info.value) || relativeTimeValuePattern.matches(info.value) || timestampValuePattern.matches(info.value)
+            }
+            info.prefix.matchesAnyPrefix(trafficInfoPrefixes) -> trafficValuePattern.matches(info.value)
+            else -> false
+        }
+    }
+
+    private fun extractTrafficBytes(name: String): Long? {
+        val info = parseInformationalNode(name) ?: return null
+        if (!info.prefix.matchesAnyPrefix(trafficInfoPrefixes)) return null
+        return parseTrafficBytes(info.value)
+    }
+
+    private fun extractExpireTimestamp(name: String): Long? {
+        val info = parseInformationalNode(name) ?: return null
+        if (!info.prefix.matchesAnyPrefix(expiryInfoPrefixes)) return null
+        return parseExpireTimestamp(info.value)
+    }
+
+    private fun parseInformationalNode(name: String): InformationalNode? {
+        val normalizedName = name
             .replace('：', ':')
             .trim()
             .trimStart { it.isWhitespace() || !it.isLetterOrDigit() }
 
         val separatorIndex = normalizedName.indexOf(':')
-        if (separatorIndex <= 0 || separatorIndex >= normalizedName.lastIndex) return false
+        if (separatorIndex <= 0 || separatorIndex >= normalizedName.lastIndex) return null
 
         val prefix = normalizedName.substring(0, separatorIndex).trim()
         val value = normalizedName.substring(separatorIndex + 1).trim()
-        if (prefix.isBlank() || value.isBlank()) return false
+        if (prefix.isBlank() || value.isBlank()) return null
 
-        return when {
-            prefix.matchesAnyPrefix(resetInfoPrefixes) -> {
-                relativeTimeValuePattern.matches(value) || dateValuePattern.matches(value) || timestampValuePattern.matches(value)
-            }
-            prefix.matchesAnyPrefix(expiryInfoPrefixes) -> {
-                dateValuePattern.matches(value) || relativeTimeValuePattern.matches(value) || timestampValuePattern.matches(value)
-            }
-            prefix.matchesAnyPrefix(trafficInfoPrefixes) -> trafficValuePattern.matches(value)
-            else -> false
+        return InformationalNode(prefix = prefix, value = value)
+    }
+
+    private fun parseTrafficBytes(value: String): Long? {
+        val normalized = value.substringBefore('/').trim()
+        val match = Regex(
+            """(?ix)^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB|PB|KIB|MIB|GIB|TIB|PIB|BYTE|BYTES|字节|字節)$"""
+        ).find(normalized) ?: return null
+
+        val amount = match.groupValues[1].toDoubleOrNull() ?: return null
+        val multiplier = when (match.groupValues[2].uppercase(Locale.ROOT)) {
+            "B", "BYTE", "BYTES", "字节", "字節" -> 1L
+            "KB", "KIB" -> 1024L
+            "MB", "MIB" -> 1024L * 1024L
+            "GB", "GIB" -> 1024L * 1024L * 1024L
+            "TB", "TIB" -> 1024L * 1024L * 1024L * 1024L
+            "PB", "PIB" -> 1024L * 1024L * 1024L * 1024L * 1024L
+            else -> return null
+        }
+
+        return (amount * multiplier).toLong()
+    }
+
+    private fun parseExpireTimestamp(value: String): Long? {
+        if (timestampValuePattern.matches(value)) {
+            val timestamp = value.toLongOrNull() ?: return null
+            return if (value.length == 10) timestamp * 1000 else timestamp
+        }
+
+        parseRelativeDurationMillis(value)?.let { duration ->
+            return System.currentTimeMillis() + duration
+        }
+
+        val normalized = value.replace('/', '-').replace('.', '-').replace('T', ' ').trim()
+        val zoneId = ZoneId.systemDefault()
+        val dateTimePatterns = listOf(
+            "yyyy-M-d H:mm:ss",
+            "yyyy-M-d H:mm"
+        )
+
+        dateTimePatterns.forEach { pattern ->
+            runCatching {
+                LocalDateTime.parse(normalized, DateTimeFormatter.ofPattern(pattern))
+                    .atZone(zoneId)
+                    .toInstant()
+                    .toEpochMilli()
+            }.getOrNull()?.let { return it }
+        }
+
+        val datePart = normalized.substringBefore(' ')
+        return runCatching {
+            LocalDate.parse(datePart, DateTimeFormatter.ofPattern("yyyy-M-d"))
+                .atStartOfDay(zoneId)
+                .toInstant()
+                .toEpochMilli()
+        }.getOrNull()
+    }
+
+    private fun parseRelativeDurationMillis(value: String): Long? {
+        val match = Regex(
+            """
+            (?ix)
+            ^
+            (\d+)\s*
+            (
+                天|日|小时|小時|时|時|分钟|分鐘|分|秒|秒钟|秒鐘|
+                day|days|hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|
+                d|h|m|s
+            )
+            $
+            """.trimIndent()
+        ).find(value) ?: return null
+
+        val amount = match.groupValues[1].toLongOrNull() ?: return null
+        return when (match.groupValues[2].lowercase(Locale.ROOT)) {
+            "天", "日", "day", "days", "d" -> amount * 24L * 60L * 60L * 1000L
+            "小时", "小時", "时", "時", "hour", "hours", "hr", "hrs", "h" -> amount * 60L * 60L * 1000L
+            "分钟", "分鐘", "分", "minute", "minutes", "min", "mins", "m" -> amount * 60L * 1000L
+            "秒", "秒钟", "秒鐘", "second", "seconds", "sec", "secs", "s" -> amount * 1000L
+            else -> null
         }
     }
 
     private fun String.matchesAnyPrefix(prefixes: List<String>): Boolean {
         return prefixes.any { startsWith(it, ignoreCase = true) }
     }
+
+    private data class InformationalNode(
+        val prefix: String,
+        val value: String
+    )
 
     private fun parseUriList(content: String): List<ProxyNode> {
         return content
