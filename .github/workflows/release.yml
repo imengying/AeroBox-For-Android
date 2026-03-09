@@ -38,7 +38,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "9.3.1"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
