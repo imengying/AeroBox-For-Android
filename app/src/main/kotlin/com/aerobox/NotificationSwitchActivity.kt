@@ -1,17 +1,21 @@
 package com.aerobox
 
 import android.os.Bundle
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -25,21 +29,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.aerobox.core.connection.ConnectionDiagnostics
@@ -129,47 +128,36 @@ private fun NotificationSwitchDialog(
             )
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
     ) {
-        val view = LocalView.current
-        DisposableEffect(view) {
-            val window = (view.parent as? DialogWindowProvider)?.window
-            window?.apply {
-                setDimAmount(0f)
-                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-                clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    setBackgroundBlurRadius(0)
-                    attributes = attributes.apply {
-                        blurBehindRadius = 0
-                    }
-                }
-            }
-            onDispose { }
-        }
-
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .statusBarsPadding()
+                .padding(horizontal = 36.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 Text(
                     text = "切换节点",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
                 )
 
                 var selectedGroupIndex by remember { mutableStateOf(0) }
@@ -185,13 +173,20 @@ private fun NotificationSwitchDialog(
                         FilterChip(
                             selected = selectedGroupIndex == index,
                             onClick = { selectedGroupIndex = index },
-                            label = { Text(groupName) }
+                            label = {
+                                Text(
+                                    text = groupName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         )
                     }
                 }
 
                 LazyColumn(
-                    modifier = Modifier.heightIn(max = 380.dp),
+                    modifier = Modifier.heightIn(max = 340.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
@@ -209,11 +204,11 @@ private fun NotificationSwitchDialog(
                                 shape = RoundedCornerShape(16.dp)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
                                 ) {
                                     Text(
                                         text = node.name,
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = MaterialTheme.typography.titleSmall,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -223,7 +218,7 @@ private fun NotificationSwitchDialog(
                                             append(node.type.displayName())
                                             if (isSelected) append(" · 当前")
                                         },
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis

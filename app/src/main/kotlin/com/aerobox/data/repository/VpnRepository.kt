@@ -14,6 +14,8 @@ import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Socket
 
 sealed interface VpnConnectionResult {
     data class Success(val node: ProxyNode) : VpnConnectionResult
@@ -138,11 +140,43 @@ class VpnRepository(private val context: Context) {
                 testUrl = testUrl,
                 timeoutMs = timeoutMs
             )
+            if (result > 0) {
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "urlTest result: node=${node.name.ifBlank { "unnamed node" }}, latency=$result"
+                )
+                return@withContext result
+            }
+
             RuntimeLogBuffer.append(
-                if (result > 0) "debug" else "warn",
-                "urlTest result: node=${node.name.ifBlank { "unnamed node" }}, latency=$result"
+                "warn",
+                "urlTest fallback: node=${node.name.ifBlank { "unnamed node" }}, using TCP connect"
             )
-            result
+            val fallbackResult = fallbackTcpLatency(node, timeoutMs)
+            RuntimeLogBuffer.append(
+                if (fallbackResult > 0) "debug" else "warn",
+                "urlTest result: node=${node.name.ifBlank { "unnamed node" }}, latency=$fallbackResult"
+            )
+            fallbackResult
+        }
+    }
+
+    private fun fallbackTcpLatency(node: ProxyNode, timeoutMs: Int): Int {
+        val cleanServer = node.server
+            .replace("[ipv4]", "")
+            .replace("[ipv6]", "")
+            .trim()
+            .ifBlank { return -1 }
+
+        return runCatching {
+            Socket().use { socket ->
+                val start = System.nanoTime()
+                socket.connect(InetSocketAddress(cleanServer, node.port), timeoutMs)
+                ((System.nanoTime() - start) / 1_000_000L).toInt().coerceAtLeast(1)
+            }
+        }.getOrElse { error ->
+            RuntimeLogBuffer.append("warn", "tcp fallback failed: ${error.message ?: "unknown error"}")
+            -1
         }
     }
 
