@@ -162,19 +162,12 @@ jobs:
 
           import (
               "context"
-              "crypto/tls"
-              "net"
-              "net/http"
-              "net/url"
               "time"
 
               box "github.com/sagernet/sing-box"
-              "github.com/sagernet/sing-box/adapter"
-              C "github.com/sagernet/sing-box/constant"
+              "github.com/sagernet/sing-box/common/urltest"
               "github.com/sagernet/sing-box/option"
               E "github.com/sagernet/sing/common/exceptions"
-              M "github.com/sagernet/sing/common/metadata"
-              "github.com/sagernet/sing/common/ntp"
           )
 
           func URLTestOutbound(configContent string, outboundTag string, testURL string, timeout int32) (int32, error) {
@@ -204,39 +197,16 @@ jobs:
               }
               defer instance.Close()
 
-              if err = instance.PreStart(); err != nil {
-                  return 0, E.Cause(err, "pre-start box")
+              if err = instance.Start(); err != nil {
+                  return 0, E.Cause(err, "start box")
               }
 
-              dialer := instance.Outbound().Default()
-              if dialer == nil {
-                  return 0, E.New("default outbound not available")
+              outbound, loaded := instance.Outbound().Outbound(outboundTag)
+              if !loaded || outbound == nil {
+                  outbound = instance.Outbound().Default()
               }
-
-              if testURL == "" {
-                  testURL = "https://www.gstatic.com/generate_204"
-              }
-              parsedURL, err := url.Parse(testURL)
-              if err != nil {
-                  return 0, E.Cause(err, "parse test url")
-              }
-              if parsedURL.Scheme == "" {
-                  parsedURL.Scheme = "https"
-              }
-              hostname := parsedURL.Hostname()
-              if hostname == "" {
-                  return 0, E.New("missing test url host")
-              }
-              port := parsedURL.Port()
-              if port == "" {
-                  switch parsedURL.Scheme {
-                  case "http":
-                      port = "80"
-                  case "https":
-                      port = "443"
-                  default:
-                      return 0, E.New("unsupported test url scheme: ", parsedURL.Scheme)
-                  }
+              if outbound == nil {
+                  return 0, E.New("outbound not available: ", outboundTag)
               }
 
               testCtx := ctx
@@ -246,36 +216,14 @@ jobs:
                   defer timeoutCancel()
               }
 
-              httpClient := &http.Client{
-                  Transport: &http.Transport{
-                      ForceAttemptHTTP2:   true,
-                      TLSHandshakeTimeout: C.TCPTimeout,
-                      DialContext: func(reqCtx context.Context, network, addr string) (net.Conn, error) {
-                          return dialer.DialContext(reqCtx, network, M.ParseSocksaddrHostPortStr(hostname, port))
-                      },
-                      TLSClientConfig: &tls.Config{
-                          Time:    ntp.TimeFuncFromContext(testCtx),
-                          RootCAs: adapter.RootPoolFromContext(testCtx),
-                      },
-                  },
-                  CheckRedirect: func(req *http.Request, via []*http.Request) error {
-                      return http.ErrUseLastResponse
-                  },
+              if testURL == "" {
+                  testURL = "https://www.gstatic.com/generate_204"
               }
-              defer httpClient.CloseIdleConnections()
-
-              request, err := http.NewRequestWithContext(testCtx, http.MethodHead, parsedURL.String(), nil)
-              if err != nil {
-                  return 0, E.Cause(err, "build test request")
-              }
-
-              start := time.Now()
-              response, err := httpClient.Do(request)
+              delay, err := urltest.URLTest(testCtx, testURL, outbound)
               if err != nil {
                   return 0, E.Cause(err, "perform url test")
               }
-              response.Body.Close()
-              return int32(time.Since(start) / time.Millisecond), nil
+              return int32(delay), nil
           }
           EOF
           gofmt -w experimental/libbox/urltest_export.go

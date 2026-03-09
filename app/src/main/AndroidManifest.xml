@@ -41,7 +41,7 @@
             android:launchMode="singleTop"
             android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.AeroBox.Popup" />
+            android:theme="@style/Theme.AeroBox.Translucent" />
 
         <service
             android:name=".service.AeroBoxVpnService"
