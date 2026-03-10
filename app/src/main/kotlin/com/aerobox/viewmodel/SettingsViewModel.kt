@@ -50,7 +50,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val ipv6Mode: StateFlow<IPv6Mode> = PreferenceManager.ipv6ModeFlow(appContext)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IPv6Mode.ENABLE)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IPv6Mode.DISABLE)
 
     val autoReconnect: StateFlow<Boolean> = PreferenceManager.autoReconnectFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)

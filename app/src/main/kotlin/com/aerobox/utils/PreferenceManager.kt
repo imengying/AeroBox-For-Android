@@ -91,7 +91,7 @@ object PreferenceManager {
             if (!stored.isNullOrBlank()) {
                 when (stored) {
                     "DISABLE" -> IPv6Mode.DISABLE
-                    "ENABLE", "PREFER", "ONLY" -> IPv6Mode.ENABLE
+                    "ENABLE", "PREFER", "ONLY", "PREFER_IPV6" -> IPv6Mode.ENABLE
                     else -> IPv6Mode.DISABLE
                 }
             } else {
