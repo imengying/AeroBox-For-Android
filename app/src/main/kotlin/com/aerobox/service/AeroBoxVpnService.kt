@@ -344,6 +344,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     override fun openTun(options: TunOptions): Int {
         if (prepare(this) != null) error("android: missing vpn permission")
+        hasIpv6Tun = false // Reset before reading new TUN options
         RuntimeLogBuffer.append("debug", "Opening VPN TUN interface")
 
         val builder = Builder()
@@ -419,6 +420,15 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             val vpnDns = options.dnsServerAddress.value.trim().takeIf { it.isNotEmpty() }
 
             vpnDns?.let { builder.addDnsServer(it) }
+            // Add an IPv6 DNS server so Android advertises IPv6 capability
+            // on the VPN network. sing-box hijacks all DNS traffic, so the
+            // actual address doesn't matter – it just needs to be routable
+            // through the TUN.
+            if (hasIpv6Tun) {
+                inet6Addresses.firstOrNull()?.let { (address, _) ->
+                    runCatching { builder.addDnsServer(address) }
+                }
+            }
 
             if (inet4Routes.isNotEmpty()) {
                 inet4Routes.forEach { (address, prefix) ->
@@ -442,12 +452,14 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     toIpPrefixOrNull(address, prefix)?.let { builder.excludeRoute(it) }
                 }
             }
+            val ipv6Dns = if (hasIpv6Tun) inet6Addresses.firstOrNull()?.first else null
             RuntimeLogBuffer.append(
                 "debug",
                 "Tun prepared: ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
                     "routes4=${inet4Routes.size}, routes6=${inet6Routes.size}, " +
                     "exclude4=${inet4ExcludedRoutes.size}, exclude6=${inet6ExcludedRoutes.size}, " +
-                    "vpnDns=${vpnDns ?: "none"}"
+                    "vpnDns=${vpnDns ?: "none"}" +
+                    (ipv6Dns?.let { ", vpnDns6=$it" } ?: "")
             )
         }
 
@@ -480,7 +492,14 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         nm.notify(NOTIFICATION_ID, notification)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
+            if (hasIpv6Tun) {
+                // Explicitly set null on the VPN service after establish() to
+                // override any specific network that was set before openTun.
+                runCatching { setUnderlyingNetworks(null) }
+                RuntimeLogBuffer.append("debug", "Post-establish underlying networks: null (IPv6)")
+            } else {
+                updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
+            }
         }
         return pfd.fd
     }
@@ -558,9 +577,12 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     private fun updateUnderlyingNetwork(network: Network?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return
-        // When IPv6 is active, keep underlying networks as null so the system
-        // can route both IPv4 and IPv6 traffic through the correct interfaces.
-        if (hasIpv6Tun) return
+        // When IPv6 is active, always force underlying networks to null so the
+        // system can route both IPv4 and IPv6 traffic through the correct interfaces.
+        if (hasIpv6Tun) {
+            runCatching { setUnderlyingNetworks(null) }
+            return
+        }
         runCatching {
             setUnderlyingNetworks(network?.let { arrayOf(it) })
         }.onSuccess {
