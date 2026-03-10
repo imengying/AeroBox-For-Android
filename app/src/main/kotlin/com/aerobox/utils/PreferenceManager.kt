@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.RoutingMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -31,6 +32,7 @@ object PreferenceManager {
     private val ENABLE_SOCKS_INBOUND = booleanPreferencesKey("enable_socks_inbound")
     private val ENABLE_HTTP_INBOUND = booleanPreferencesKey("enable_http_inbound")
     private val ENABLE_IPV6 = booleanPreferencesKey("enable_ipv6")
+    private val IPV6_MODE = stringPreferencesKey("ipv6_mode")
     private val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
     private val ENABLE_GEO_RULES = booleanPreferencesKey("enable_geo_rules")
     private val ENABLE_GEO_CN_DOMAIN_RULE = booleanPreferencesKey("enable_geo_cn_domain_rule")
@@ -83,8 +85,19 @@ object PreferenceManager {
     fun enableHttpInboundFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[ENABLE_HTTP_INBOUND] ?: false }
 
-    fun enableIPv6Flow(context: Context): Flow<Boolean> =
-        context.dataStore.data.map { it[ENABLE_IPV6] ?: true }
+    fun ipv6ModeFlow(context: Context): Flow<IPv6Mode> =
+        context.dataStore.data.map {
+            val stored = it[IPV6_MODE]
+            if (!stored.isNullOrBlank()) {
+                when (stored) {
+                    "DISABLE" -> IPv6Mode.DISABLE
+                    "ENABLE", "PREFER", "ONLY" -> IPv6Mode.ENABLE
+                    else -> IPv6Mode.ENABLE
+                }
+            } else {
+                if (it[ENABLE_IPV6] ?: true) IPv6Mode.ENABLE else IPv6Mode.DISABLE
+            }
+        }
 
     fun autoReconnectFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_RECONNECT] ?: true }
@@ -160,8 +173,11 @@ object PreferenceManager {
         context.dataStore.edit { it[ENABLE_HTTP_INBOUND] = enabled }
     }
 
-    suspend fun setEnableIPv6(context: Context, enabled: Boolean) {
-        context.dataStore.edit { it[ENABLE_IPV6] = enabled }
+    suspend fun setIPv6Mode(context: Context, mode: IPv6Mode) {
+        context.dataStore.edit {
+            it[IPV6_MODE] = mode.name
+            it[ENABLE_IPV6] = mode != IPv6Mode.DISABLE
+        }
     }
 
     suspend fun setAutoReconnect(context: Context, enabled: Boolean) {

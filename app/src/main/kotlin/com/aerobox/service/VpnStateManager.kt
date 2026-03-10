@@ -47,18 +47,26 @@ object VpnStateManager {
     fun updateTrafficStats(
         uploadSpeed: Long,
         downloadSpeed: Long,
-        totalUpload: Long,
-        totalDownload: Long
+        uploadDelta: Long,
+        downloadDelta: Long
     ) {
+        val current = _vpnState.value
         _vpnState.value = _vpnState.value.copy(
             uploadSpeed = uploadSpeed,
             downloadSpeed = downloadSpeed,
-            totalUpload = totalUpload,
-            totalDownload = totalDownload
+            totalUpload = (current.totalUpload + uploadDelta).coerceAtLeast(0L),
+            totalDownload = (current.totalDownload + downloadDelta).coerceAtLeast(0L)
         )
     }
 
-    fun resetStats() {
+    fun resetSpeedStats() {
+        _vpnState.value = _vpnState.value.copy(
+            uploadSpeed = 0,
+            downloadSpeed = 0
+        )
+    }
+
+    fun resetTrafficSession() {
         _vpnState.value = _vpnState.value.copy(
             uploadSpeed = 0,
             downloadSpeed = 0,

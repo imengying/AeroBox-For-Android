@@ -1,5 +1,7 @@
 package com.aerobox.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,12 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.R
+import com.aerobox.data.model.IPv6Mode
 import com.aerobox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
@@ -53,6 +57,7 @@ fun SettingsScreen(
     onNavigateToLicense: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
@@ -63,7 +68,7 @@ fun SettingsScreen(
     val perAppProxyEnabled by viewModel.perAppProxyEnabled.collectAsStateWithLifecycle()
     val enableSocksInbound by viewModel.enableSocksInbound.collectAsStateWithLifecycle()
     val enableHttpInbound by viewModel.enableHttpInbound.collectAsStateWithLifecycle()
-    val enableIPv6 by viewModel.enableIPv6.collectAsStateWithLifecycle()
+    val ipv6Mode by viewModel.ipv6Mode.collectAsStateWithLifecycle()
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
     val enableGeoRules by viewModel.enableGeoRules.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -238,7 +243,14 @@ fun SettingsScreen(
                 title = stringResource(R.string.enable_ipv6),
                 supporting = "启用 IPv6 网络支持",
                 trailing = {
-                    Switch(checked = enableIPv6, onCheckedChange = { scope.launch { viewModel.setEnableIPv6(it) } })
+                    Switch(
+                        checked = ipv6Mode == IPv6Mode.ENABLE,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                viewModel.setIPv6Mode(if (enabled) IPv6Mode.ENABLE else IPv6Mode.DISABLE)
+                            }
+                        }
+                    )
                 }
             )
         }
@@ -266,6 +278,14 @@ fun SettingsScreen(
         }
         item {
             SettingItem(
+                modifier = Modifier.clickable {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/imengying/AeroBoxForAndroid")
+                        )
+                    )
+                },
                 icon = { Icon(Icons.Filled.Info, contentDescription = null) },
                 title = stringResource(R.string.version),
                 supporting = "${com.aerobox.BuildConfig.VERSION_NAME} (sing-box ${com.aerobox.core.native.SingBoxNative.getVersion()})",
@@ -298,6 +318,7 @@ fun SettingsScreen(
             }
         )
     }
+
 }
 
 @Composable

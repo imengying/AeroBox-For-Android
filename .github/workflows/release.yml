@@ -15,7 +15,7 @@ jobs:
     env:
       ANDROID_NDK_VERSION: 29.0.14206865
       GOMOBILE_VERSION: v0.1.12
-      LIBBOX_BUILD_TAGS: with_quic,with_utls
+      LIBBOX_BUILD_TAGS: with_quic,with_utls,with_v2ray_api
 
     steps:
       - name: Checkout
@@ -162,12 +162,17 @@ jobs:
 
           import (
               "context"
+              "fmt"
+              "strings"
               "time"
 
               box "github.com/sagernet/sing-box"
               "github.com/sagernet/sing-box/common/urltest"
+              "github.com/sagernet/sing-box/experimental/v2rayapi"
               "github.com/sagernet/sing-box/option"
               E "github.com/sagernet/sing/common/exceptions"
+              "google.golang.org/grpc"
+              "google.golang.org/grpc/credentials/insecure"
           )
 
           func URLTestOutbound(configContent string, outboundTag string, testURL string, timeout int32) (int32, error) {
@@ -224,6 +229,57 @@ jobs:
                   return 0, E.Cause(err, "perform url test")
               }
               return int32(delay), nil
+          }
+
+          func QueryV2RayOutboundStats(apiAddress string, outboundTags string) (string, error) {
+              if apiAddress == "" {
+                  return "", E.New("empty v2ray api address")
+              }
+
+              conn, err := grpc.NewClient(
+                  apiAddress,
+                  grpc.WithTransportCredentials(insecure.NewCredentials()),
+              )
+              if err != nil {
+                  return "", E.Cause(err, "dial v2ray api")
+              }
+              defer conn.Close()
+
+              client := v2rayapi.NewStatsServiceClient(conn)
+              patterns := make([]string, 0)
+              for _, tag := range strings.Split(outboundTags, ",") {
+                  trimmed := strings.TrimSpace(tag)
+                  if trimmed == "" {
+                      continue
+                  }
+                  patterns = append(patterns, "outbound>>>"+trimmed+">>>traffic")
+              }
+              if len(patterns) == 0 {
+                  patterns = append(patterns, "outbound>>>proxy>>>traffic")
+              }
+
+              ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+              defer cancel()
+
+              response, err := client.QueryStats(ctx, &v2rayapi.QueryStatsRequest{
+                  Patterns: patterns,
+              })
+              if err != nil {
+                  return "", E.Cause(err, "query stats")
+              }
+
+              var upload int64
+              var download int64
+              for _, stat := range response.GetStat() {
+                  switch {
+                  case strings.HasSuffix(stat.GetName(), ">>>uplink"):
+                      upload += stat.GetValue()
+                  case strings.HasSuffix(stat.GetName(), ">>>downlink"):
+                      download += stat.GetValue()
+                  }
+              }
+
+              return fmt.Sprintf("%d,%d", upload, download), nil
           }
           EOF
           gofmt -w experimental/libbox/urltest_export.go

@@ -8,3 +8,4 @@
 .externalNativeBuild
 .cxx
 app/build
+RELEASE_NOTES.md

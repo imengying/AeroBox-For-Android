@@ -3,6 +3,7 @@ package com.aerobox.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.RoutingMode
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,8 +49,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val enableHttpInbound: StateFlow<Boolean> = PreferenceManager.enableHttpInboundFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val enableIPv6: StateFlow<Boolean> = PreferenceManager.enableIPv6Flow(appContext)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val ipv6Mode: StateFlow<IPv6Mode> = PreferenceManager.ipv6ModeFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IPv6Mode.ENABLE)
 
     val autoReconnect: StateFlow<Boolean> = PreferenceManager.autoReconnectFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
@@ -117,8 +118,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         PreferenceManager.setEnableHttpInbound(appContext, enabled)
     }
 
-    suspend fun setEnableIPv6(enabled: Boolean) {
-        PreferenceManager.setEnableIPv6(appContext, enabled)
+    suspend fun setIPv6Mode(mode: IPv6Mode) {
+        PreferenceManager.setIPv6Mode(appContext, mode)
     }
 
     suspend fun setAutoReconnect(enabled: Boolean) {

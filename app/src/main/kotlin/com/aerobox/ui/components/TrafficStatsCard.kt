@@ -55,10 +55,10 @@ fun TrafficStatsCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SpeedMetric(
+                    TrafficMetric(
                         title = stringResource(R.string.upload),
                         prefix = "↑",
-                        speed = NetworkUtils.formatSpeed(stats.uploadSpeed),
+                        value = NetworkUtils.formatBytesCompact(stats.totalUpload),
                         modifier = Modifier.weight(1f)
                     )
                     Box(
@@ -70,10 +70,10 @@ fun TrafficStatsCard(
                                 shape = RoundedCornerShape(999.dp)
                             )
                     )
-                    SpeedMetric(
+                    TrafficMetric(
                         title = stringResource(R.string.download),
                         prefix = "↓",
-                        speed = NetworkUtils.formatSpeed(stats.downloadSpeed),
+                        value = NetworkUtils.formatBytesCompact(stats.totalDownload),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -83,19 +83,21 @@ fun TrafficStatsCard(
 }
 
 @Composable
-private fun SpeedMetric(
+private fun TrafficMetric(
     title: String,
     prefix: String,
-    speed: String,
+    value: String,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(1.dp)
     ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
             Text(
                 text = prefix,
@@ -113,13 +115,14 @@ private fun SpeedMetric(
             )
         }
         Text(
-            text = speed,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+            text = value,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            softWrap = false
+            softWrap = true,
+            textAlign = TextAlign.Center
         )
     }
 }

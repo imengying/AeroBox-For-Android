@@ -118,10 +118,12 @@ class VpnRepository(private val context: Context) {
         return withContext(Dispatchers.IO) {
             RuntimeLogBuffer.append("debug", "SingBoxNative.version=${SingBoxNative.getVersion()}")
             val userLocalDns = PreferenceManager.localDnsFlow(context).first()
+            val ipv6Mode = PreferenceManager.ipv6ModeFlow(context).first()
             val safeLocalDns = if (userLocalDns.contains("[")) "223.5.5.5" else userLocalDns
             val config = ConfigGenerator.generateUrlTestConfig(
                 node = node,
-                localDns = safeLocalDns
+                localDns = safeLocalDns,
+                ipv6Mode = ipv6Mode
             )
             RuntimeLogBuffer.append(
                 "debug",
@@ -176,8 +178,7 @@ class VpnRepository(private val context: Context) {
         val enableDoh = PreferenceManager.enableDohFlow(context).first()
         val enableSocksInbound = PreferenceManager.enableSocksInboundFlow(context).first()
         val enableHttpInbound = PreferenceManager.enableHttpInboundFlow(context).first()
-        val enableIPv6 = PreferenceManager.enableIPv6Flow(context).first()
-        val effectiveEnableIPv6 = enableIPv6 && isPureIpv6Node(node)
+        val ipv6Mode = PreferenceManager.ipv6ModeFlow(context).first()
         val enableGeoRules = PreferenceManager.enableGeoRulesFlow(context).first()
         val enableGeoCnDomainRule = PreferenceManager.enableGeoCnDomainRuleFlow(context).first()
         val enableGeoCnIpRule = PreferenceManager.enableGeoCnIpRuleFlow(context).first()
@@ -186,7 +187,7 @@ class VpnRepository(private val context: Context) {
         RuntimeLogBuffer.append(
             "debug",
             "Config options: mode=$routingMode, doh=$enableDoh, socksIn=$enableSocksInbound, " +
-                "httpIn=$enableHttpInbound, ipv6Setting=$enableIPv6, ipv6Effective=$effectiveEnableIPv6, " +
+                "httpIn=$enableHttpInbound, ipv6Mode=$ipv6Mode, " +
                 "geoRules=$enableGeoRules, cnDomain=$enableGeoCnDomainRule, cnIp=$enableGeoCnIpRule, " +
                 "ads=$enableGeoAdsBlock, blockQuic=$enableGeoBlockQuic"
         )
@@ -224,7 +225,7 @@ class VpnRepository(private val context: Context) {
             enableDoh = enableDoh,
             enableSocksInbound = enableSocksInbound,
             enableHttpInbound = enableHttpInbound,
-            enableIPv6 = effectiveEnableIPv6,
+            ipv6Mode = ipv6Mode,
             enableGeoCnDomainRule = enableGeoRules && enableGeoCnDomainRule,
             enableGeoCnIpRule = enableGeoRules && enableGeoCnIpRule,
             enableGeoAdsBlock = enableGeoRules && enableGeoAdsBlock,
@@ -233,15 +234,5 @@ class VpnRepository(private val context: Context) {
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
-    }
-
-    private fun isPureIpv6Node(node: ProxyNode): Boolean {
-        val host = node.server
-            .trim()
-            .removePrefix("[")
-            .removeSuffix("]")
-            .substringBefore('%')
-        if (!host.contains(':')) return false
-        return host.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
     }
 }

@@ -1,5 +1,6 @@
 package com.aerobox.core.config
 
+import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.ProxyType
 import com.aerobox.data.model.RoutingMode
@@ -9,6 +10,7 @@ import java.net.URI
 
 object ConfigGenerator {
     private const val PROXY_OUTBOUND_TAG = "proxy"
+    const val V2RAY_API_LISTEN = "127.0.0.1:10085"
 
     private data class DnsServerSpec(
         val type: String,
@@ -25,7 +27,7 @@ object ConfigGenerator {
         enableDoh: Boolean = true,
         enableSocksInbound: Boolean = false,
         enableHttpInbound: Boolean = false,
-        enableIPv6: Boolean = true,
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE,
         enableGeoCnDomainRule: Boolean = true,
         enableGeoCnIpRule: Boolean = true,
         enableGeoAdsBlock: Boolean = true,
@@ -53,12 +55,13 @@ object ConfigGenerator {
                 localDns = localDns,
                 enableDoh = enableDoh,
                 routingMode = routingMode,
-                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSiteCn
+                enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSiteCn,
+                ipv6Mode = ipv6Mode
             )
         )
-        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, enableIPv6))
+        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode))
 
-        val proxyOutbound = buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG)
+        val proxyOutbound = buildProxyOutbound(node, ipv6Mode).put("tag", PROXY_OUTBOUND_TAG)
         config.put(
             "outbounds",
             JSONArray()
@@ -70,6 +73,7 @@ object ConfigGenerator {
             "route",
             buildRoute(
                 routingMode = routingMode,
+                ipv6Mode = ipv6Mode,
                 geoIpCnRuleSetPath = geoIpCnRuleSetPath,
                 geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
                 geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath,
@@ -79,13 +83,15 @@ object ConfigGenerator {
                 enableGeoBlockQuic = enableGeoBlockQuic
             )
         )
+        config.put("experimental", buildExperimental())
 
         return config.toString(2)
     }
 
     fun generateUrlTestConfig(
         node: ProxyNode,
-        localDns: String = "223.5.5.5"
+        localDns: String = "223.5.5.5",
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE
     ): String {
         val config = JSONObject()
         config.put(
@@ -101,24 +107,44 @@ object ConfigGenerator {
                 localDns = localDns,
                 enableDoh = false,
                 routingMode = RoutingMode.DIRECT,
-                enableGeoCnDomainRule = false
+                enableGeoCnDomainRule = false,
+                ipv6Mode = ipv6Mode
             )
         )
         config.put("inbounds", JSONArray())
         config.put(
             "outbounds",
             JSONArray()
-                .put(buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG))
+                .put(buildProxyOutbound(node, ipv6Mode).put("tag", PROXY_OUTBOUND_TAG))
                 .put(JSONObject().put("type", "direct").put("tag", "direct"))
         )
         config.put(
             "route",
             JSONObject()
                 .put("auto_detect_interface", false)
-                .put("default_domain_resolver", "local")
+                .put(
+                    "default_domain_resolver",
+                    JSONObject()
+                        .put("server", "local")
+                        .put("strategy", ipv6Mode.domainStrategy())
+                )
                 .put("final", PROXY_OUTBOUND_TAG)
         )
         return config.toString()
+    }
+
+    private fun buildExperimental(): JSONObject {
+        return JSONObject().put(
+            "v2ray_api",
+            JSONObject()
+                .put("listen", V2RAY_API_LISTEN)
+                .put(
+                    "stats",
+                    JSONObject()
+                        .put("enabled", true)
+                        .put("outbounds", JSONArray().put("proxy").put("direct"))
+                )
+        )
     }
 
     // ── DNS ──────────────────────────────────────────────────────────
@@ -128,17 +154,20 @@ object ConfigGenerator {
         localDns: String,
         enableDoh: Boolean,
         routingMode: RoutingMode,
-        enableGeoCnDomainRule: Boolean
+        enableGeoCnDomainRule: Boolean,
+        ipv6Mode: IPv6Mode
     ): JSONObject {
         val bootstrapServer = buildDnsServer(
             tag = "bootstrap",
-            dns = "1.1.1.1"
+            dns = bootstrapDnsAddress(ipv6Mode),
+            ipv6Mode = ipv6Mode
         )
 
         val localServer = buildDnsServer(
             tag = "local",
             dns = normalizeLocalDnsAddress(localDns),
-            resolverTag = "bootstrap"
+            resolverTag = "bootstrap",
+            ipv6Mode = ipv6Mode
         )
 
         // Strict direct mode: force DNS to local resolver only.
@@ -152,7 +181,8 @@ object ConfigGenerator {
             tag = "remote",
             dns = normalizeRemoteDnsAddress(remoteDns, enableDoh),
             detour = "proxy",
-            resolverTag = "bootstrap"
+            resolverTag = "bootstrap",
+            ipv6Mode = ipv6Mode
         )
 
         val dns = JSONObject()
@@ -191,7 +221,8 @@ object ConfigGenerator {
         tag: String,
         dns: String,
         detour: String? = null,
-        resolverTag: String? = null
+        resolverTag: String? = null,
+        ipv6Mode: IPv6Mode
     ): JSONObject {
         val spec = parseDnsServer(dns)
         return JSONObject()
@@ -203,7 +234,12 @@ object ConfigGenerator {
                 detour?.let { put("detour", it) }
                 spec.path?.let { put("path", it) }
                 if (!isIpLiteral(spec.server)) {
-                    put("domain_resolver", resolverTag ?: "bootstrap")
+                    put(
+                        "domain_resolver",
+                        JSONObject()
+                            .put("server", resolverTag ?: "bootstrap")
+                            .put("strategy", ipv6Mode.domainStrategy())
+                    )
                 }
             }
     }
@@ -381,19 +417,27 @@ object ConfigGenerator {
         }
     }
 
+    private fun bootstrapDnsAddress(ipv6Mode: IPv6Mode): String {
+        return "1.1.1.1"
+    }
+
     // ── Inbounds ─────────────────────────────────────────────────────
 
     private fun buildInbounds(
         enableSocks: Boolean,
         enableHttp: Boolean,
-        enableIPv6: Boolean = true
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE
     ): JSONArray {
         val inbounds = JSONArray()
-        val tunAddresses = JSONArray()
-            .put("172.19.0.1/28")
-        if (enableIPv6) {
-            tunAddresses.put("fdfe:dcba:9876::1/126")
+        val tunAddresses = JSONArray().apply {
+            if (!ipv6Mode.usesIpv6OnlyTun()) {
+                put("172.19.0.1/28")
+            }
+            if (ipv6Mode.enablesIpv6Tun()) {
+                put("fdfe:dcba:9876::1/126")
+            }
         }
+        val inboundListen = if (ipv6Mode == IPv6Mode.DISABLE) "0.0.0.0" else "::"
 
         val tunInbound = JSONObject()
             .put("type", "tun")
@@ -413,7 +457,7 @@ object ConfigGenerator {
                 JSONObject()
                     .put("type", "socks")
                     .put("tag", "socks-in")
-                    .put("listen", "::")
+                    .put("listen", inboundListen)
                     .put("listen_port", 2080)
             )
         }
@@ -424,7 +468,7 @@ object ConfigGenerator {
                 JSONObject()
                     .put("type", "http")
                     .put("tag", "http-in")
-                    .put("listen", "::")
+                    .put("listen", inboundListen)
                     .put("listen_port", 2081)
             )
         }
@@ -436,6 +480,7 @@ object ConfigGenerator {
 
     private fun buildRoute(
         routingMode: RoutingMode,
+        ipv6Mode: IPv6Mode,
         geoIpCnRuleSetPath: String? = null,
         geoSiteCnRuleSetPath: String? = null,
         geoSiteAdsRuleSetPath: String? = null,
@@ -446,7 +491,12 @@ object ConfigGenerator {
     ): JSONObject {
         val route = JSONObject()
             .put("auto_detect_interface", true)
-            .put("default_domain_resolver", "bootstrap")
+            .put(
+                "default_domain_resolver",
+                JSONObject()
+                    .put("server", "bootstrap")
+                    .put("strategy", ipv6Mode.domainStrategy())
+            )
 
         val ruleSets = JSONArray()
         if (!geoIpCnRuleSetPath.isNullOrBlank()) {
@@ -563,7 +613,7 @@ object ConfigGenerator {
 
     // ── Proxy Outbound ───────────────────────────────────────────────
 
-    private fun buildProxyOutbound(node: ProxyNode): JSONObject {
+    private fun buildProxyOutbound(node: ProxyNode, ipv6Mode: IPv6Mode): JSONObject {
         val cleanServer = node.server.replace("[ipv4]", "").replace("[ipv6]", "").trim()
         val outbound = JSONObject()
             .put("server", cleanServer.ifBlank { "127.0.0.1" })
@@ -634,6 +684,14 @@ object ConfigGenerator {
             if (network != "tcp" && network.isNotBlank()) {
                 outbound.put("transport", buildTransport(node))
             }
+        }
+        if (!isIpLiteral(cleanServer)) {
+            outbound.put(
+                "domain_resolver",
+                JSONObject()
+                    .put("server", "bootstrap")
+                    .put("strategy", ipv6Mode.domainStrategy())
+            )
         }
         return outbound
     }

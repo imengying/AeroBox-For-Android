@@ -12,5 +12,20 @@ object NetworkUtils {
         val value = bytes / 1024.0.pow(digitGroups.toDouble())
         return "%.2f %s".format(value, units[digitGroups])
     }
+
+    fun formatBytesCompact(bytes: Long): String {
+        if (bytes <= 0) return "0B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        val digitGroups = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(0, units.lastIndex)
+        if (digitGroups == 0) return "${bytes}B"
+        val value = bytes / 1024.0.pow(digitGroups.toDouble())
+        val pattern = when {
+            value >= 100 -> "%.0f%s"
+            value >= 10 -> "%.1f%s"
+            else -> "%.2f%s"
+        }
+        return pattern.format(value, units[digitGroups])
+    }
+
     fun formatSpeed(bps: Long): String = "${formatBytes(bps)}/s"
 }

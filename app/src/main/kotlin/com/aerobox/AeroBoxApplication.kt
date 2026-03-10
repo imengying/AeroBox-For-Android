@@ -9,6 +9,7 @@ import androidx.room.Room
 import com.aerobox.data.database.AppDatabase
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.core.native.SingBoxNative
+import com.aerobox.service.VpnStateManager
 
 class AeroBoxApplication : Application() {
 
@@ -18,6 +19,7 @@ class AeroBoxApplication : Application() {
 
         // Ensure singleton initialization
         database
+        VpnStateManager.resetTrafficSession()
         createNotificationChannel()
         SingBoxNative.setup(this)
 

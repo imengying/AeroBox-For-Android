@@ -17,6 +17,11 @@ object SingBoxNative {
     private const val TAG = "SingBoxNative"
     private var initialized = false
 
+    data class OutboundTrafficStats(
+        val uploadBytes: Long,
+        val downloadBytes: Long
+    )
+
     /**
      * Initialize libbox with app paths. Must be called once at startup.
      */
@@ -74,6 +79,28 @@ object SingBoxNative {
             Log.w(TAG, "urlTestOutbound failed: $msg")
             RuntimeLogBuffer.append("error", "urlTestOutbound failed: $msg")
             -1
+        }
+    }
+
+    fun queryV2RayOutboundStats(
+        apiAddress: String,
+        outboundTags: List<String>
+    ): OutboundTrafficStats? {
+        if (outboundTags.isEmpty()) return OutboundTrafficStats(0L, 0L)
+        return try {
+            val raw = Libbox.queryV2RayOutboundStats(
+                apiAddress,
+                outboundTags.joinToString(",")
+            )
+            val parts = raw.split(",", limit = 2)
+            val upload = parts.getOrNull(0)?.trim()?.toLongOrNull() ?: 0L
+            val download = parts.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
+            OutboundTrafficStats(upload, download)
+        } catch (e: Exception) {
+            val msg = e.message ?: "unknown error"
+            Log.w(TAG, "queryV2RayOutboundStats failed: $msg")
+            RuntimeLogBuffer.append("error", "queryV2RayOutboundStats failed: $msg")
+            null
         }
     }
 }

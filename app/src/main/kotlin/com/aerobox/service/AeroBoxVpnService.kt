@@ -17,7 +17,9 @@ import com.aerobox.AeroBoxApplication
 import com.aerobox.MainActivity
 import com.aerobox.NotificationSwitchActivity
 import com.aerobox.R
+import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.core.logging.RuntimeLogBuffer
+import com.aerobox.core.native.SingBoxNative
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.utils.PreferenceManager
 import io.nekohasekai.libbox.CommandServer
@@ -241,7 +243,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
         VpnStateManager.updateServiceActive(false)
         VpnStateManager.updateConnectionState(false, null)
-        VpnStateManager.resetStats()
+        VpnStateManager.resetSpeedStats()
 
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
@@ -524,31 +526,37 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     private fun startSpeedTicker() {
         speedTickerJob?.cancel()
-        val uid = applicationInfo.uid
-        val initialTx = android.net.TrafficStats.getUidTxBytes(uid).takeIf { it >= 0L } ?: 0L
-        val initialRx = android.net.TrafficStats.getUidRxBytes(uid).takeIf { it >= 0L } ?: 0L
+        val trackedOutbounds = listOf("proxy", "direct")
+        val initialStats = SingBoxNative.queryV2RayOutboundStats(
+            apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
+            outboundTags = trackedOutbounds
+        ) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
         speedTickerJob = serviceScope.launch {
-            var prevTx = initialTx
-            var prevRx = initialRx
+            var prevUpload = initialStats.uploadBytes
+            var prevDownload = initialStats.downloadBytes
 
             while (isActive && VpnStateManager.serviceActive.value) {
                 delay(1000)
-                val curTx = android.net.TrafficStats.getUidTxBytes(uid).takeIf { it >= 0L } ?: prevTx
-                val curRx = android.net.TrafficStats.getUidRxBytes(uid).takeIf { it >= 0L } ?: prevRx
-                val uploadSpeed = (curTx - prevTx).coerceAtLeast(0L)
-                val downloadSpeed = (curRx - prevRx).coerceAtLeast(0L)
-                val totalUpload = (curTx - initialTx).coerceAtLeast(0L)
-                val totalDownload = (curRx - initialRx).coerceAtLeast(0L)
+                val currentStats = SingBoxNative.queryV2RayOutboundStats(
+                    apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
+                    outboundTags = trackedOutbounds
+                )
+                val currentUpload = currentStats?.uploadBytes ?: prevUpload
+                val currentDownload = currentStats?.downloadBytes ?: prevDownload
+                val uploadSpeed = (currentUpload - prevUpload).coerceAtLeast(0L)
+                val downloadSpeed = (currentDownload - prevDownload).coerceAtLeast(0L)
+                val uploadDelta = (currentUpload - prevUpload).coerceAtLeast(0L)
+                val downloadDelta = (currentDownload - prevDownload).coerceAtLeast(0L)
 
                 VpnStateManager.updateTrafficStats(
                     uploadSpeed = uploadSpeed,
                     downloadSpeed = downloadSpeed,
-                    totalUpload = totalUpload,
-                    totalDownload = totalDownload
+                    uploadDelta = uploadDelta,
+                    downloadDelta = downloadDelta
                 )
 
-                prevTx = curTx
-                prevRx = curRx
+                prevUpload = currentUpload
+                prevDownload = currentDownload
 
                 val text = "↑ ${NetworkUtils.formatBytes(uploadSpeed)}/s  ↓ ${NetworkUtils.formatBytes(downloadSpeed)}/s"
                 val notification = buildNotification(contentText = text, connected = true)
