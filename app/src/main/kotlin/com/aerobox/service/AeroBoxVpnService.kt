@@ -71,8 +71,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
-    private var pendingSwitchConfig: String? = null
-    private var pendingSwitchNodeId: Long = -1L
     private var hasIpv6Tun = false
     private var cachedConnectedNode: com.aerobox.data.model.ProxyNode? = null
 
@@ -97,8 +95,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 val nodeId = intent.getLongExtra(EXTRA_NODE_ID, -1L)
                 userRequestedStop = false
                 reconnectAttempts = 0
-                pendingSwitchConfig = null
-                pendingSwitchNodeId = -1L
                 lastConfig = config
                 if (nodeId > 0L) {
                     lastNodeId = nodeId
@@ -114,8 +110,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 }
                 userRequestedStop = false
                 reconnectAttempts = 0
-                pendingSwitchConfig = null
-                pendingSwitchNodeId = -1L
                 lastConfig = config
                 if (nodeId > 0L) {
                     lastNodeId = nodeId
@@ -125,8 +119,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             }
             ACTION_STOP -> {
                 userRequestedStop = true
-                pendingSwitchConfig = null
-                pendingSwitchNodeId = -1L
                 stopService("Stopping service: ACTION_STOP intent")
                 stopSelf()
             }
@@ -241,7 +233,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
         VpnStateManager.updateServiceActive(false)
         VpnStateManager.updateConnectionState(false, null)
-        VpnStateManager.resetSpeedStats()
+        VpnStateManager.resetTrafficSession()
 
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
@@ -249,24 +241,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     // ─── CommandServerHandler callbacks ───
 
     override fun serviceStop() {
-        val switchConfig = pendingSwitchConfig
-        val switchNodeId = pendingSwitchNodeId
-        if (!switchConfig.isNullOrBlank()) {
-            pendingSwitchConfig = null
-            pendingSwitchNodeId = -1L
-            vpnInterface?.close()
-            vpnInterface = null
-            VpnStateManager.updateConnectionState(false, null)
-            RuntimeLogBuffer.append("info", "Service stopped for node switch")
-            lastConfig = switchConfig
-            if (switchNodeId > 0L) {
-                lastNodeId = switchNodeId
-            }
-            serviceScope.launch {
-                startVpn(switchConfig)
-            }
-            return
-        }
         RuntimeLogBuffer.append(
             if (userRequestedStop) "info" else "warn",
             if (userRequestedStop) "Service stopped" else "Service stopped unexpectedly"
