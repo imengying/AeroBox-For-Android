@@ -92,10 +92,10 @@ object PreferenceManager {
                 when (stored) {
                     "DISABLE" -> IPv6Mode.DISABLE
                     "ENABLE", "PREFER", "ONLY" -> IPv6Mode.ENABLE
-                    else -> IPv6Mode.ENABLE
+                    else -> IPv6Mode.DISABLE
                 }
             } else {
-                if (it[ENABLE_IPV6] ?: true) IPv6Mode.ENABLE else IPv6Mode.DISABLE
+                if (it[ENABLE_IPV6] ?: false) IPv6Mode.ENABLE else IPv6Mode.DISABLE
             }
         }
 
