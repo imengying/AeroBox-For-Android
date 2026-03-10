@@ -445,7 +445,7 @@ object ConfigGenerator {
             .put("mtu", 1400)
             .put("auto_route", true)
             .put("strict_route", true)
-            .put("stack", "mixed")
+            .put("stack", "system")
             .put("sniff", true)
             .put("sniff_override_destination", true)
 
