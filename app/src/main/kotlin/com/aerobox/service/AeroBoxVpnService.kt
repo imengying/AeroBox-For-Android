@@ -400,10 +400,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 }
                 if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
                     inet4ExcludedRoutes.forEach { (address, prefix) ->
-                        builder.excludeRoute(IpPrefix("$address/$prefix"))
+                        toIpPrefixOrNull(address, prefix)?.let { builder.excludeRoute(it) }
                     }
                     inet6ExcludedRoutes.forEach { (address, prefix) ->
-                        builder.excludeRoute(IpPrefix("$address/$prefix"))
+                        toIpPrefixOrNull(address, prefix)?.let { builder.excludeRoute(it) }
                     }
                 }
             } else {
@@ -458,10 +458,23 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     private fun Builder.addRouteCompat(address: String, prefix: Int) {
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
-            addRoute(IpPrefix("$address/$prefix"))
+            toIpPrefixOrNull(address, prefix)?.let(::addRoute) ?: addRoute(address, prefix)
         } else {
             addRoute(address, prefix)
         }
+    }
+
+    private fun toIpPrefixOrNull(address: String, prefix: Int): IpPrefix? {
+        val normalized = address
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+            .substringBefore('%')
+            .trim()
+        if (normalized.isEmpty()) return null
+        return runCatching {
+            IpPrefix(InetAddress.getByName(normalized), prefix)
+        }.getOrNull()
     }
 
     private fun readTunAddressList(options: TunOptions, memberName: String): List<Pair<String, Int>> {
