@@ -157,11 +157,10 @@ object ConfigGenerator {
         enableGeoCnDomainRule: Boolean,
         ipv6Mode: IPv6Mode
     ): JSONObject {
-        val bootstrapServer = buildDnsServer(
-            tag = "bootstrap",
-            dns = bootstrapDnsAddress(ipv6Mode),
-            ipv6Mode = ipv6Mode
-        )
+        val bootstrapServer = JSONObject()
+            .put("type", "local")
+            .put("tag", "bootstrap")
+            .put("detour", "direct")
 
         val localServer = buildDnsServer(
             tag = "local",
@@ -415,10 +414,6 @@ object ConfigGenerator {
             "119.29.29.29", "182.254.116.116", "doh.pub" -> "doh.pub"
             else -> null
         }
-    }
-
-    private fun bootstrapDnsAddress(ipv6Mode: IPv6Mode): String {
-        return "1.1.1.1"
     }
 
     // ── Inbounds ─────────────────────────────────────────────────────
