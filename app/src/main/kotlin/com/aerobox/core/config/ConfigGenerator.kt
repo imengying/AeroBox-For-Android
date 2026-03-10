@@ -441,11 +441,6 @@ object ConfigGenerator {
         }
         val inboundListen = if (ipv6Mode == IPv6Mode.DISABLE) "0.0.0.0" else "::"
 
-        val sniffConfig = JSONObject()
-            .put("enabled", true)
-            .put("override_destination", true)
-            .put("timeout", "1s")
-
         val tunInbound = JSONObject()
             .put("type", "tun")
             .put("tag", "tun-in")
@@ -455,7 +450,8 @@ object ConfigGenerator {
             .put("auto_route", true)
             .put("strict_route", true)
             .put("stack", "system")
-            .put("sniff", sniffConfig)
+            .put("sniff", true)
+            .put("sniff_override_destination", true)
 
         inbounds.put(tunInbound)
 
@@ -467,7 +463,8 @@ object ConfigGenerator {
                     .put("tag", "socks-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2080)
-                    .put("sniff", sniffConfig)
+                    .put("sniff", true)
+                    .put("sniff_override_destination", true)
             )
         }
 
@@ -479,7 +476,8 @@ object ConfigGenerator {
                     .put("tag", "http-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2081)
-                    .put("sniff", sniffConfig)
+                    .put("sniff", true)
+                    .put("sniff_override_destination", true)
             )
         }
 
