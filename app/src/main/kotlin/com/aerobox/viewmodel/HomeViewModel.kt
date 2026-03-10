@@ -451,14 +451,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
         val ipv4Endpoints = if (vpnState.value.isConnected) {
-            listOf("https://api4.ipify.org", "https://v4.ident.me", "https://4.ipw.cn")
+            listOf("https://ipv4.icanhazip.com", "https://api4.ipify.org", "https://4.ipw.cn")
         } else {
-            listOf("https://4.ipw.cn", "https://api.ip.sb/ip", "https://api4.ipify.org")
+            listOf("https://4.ipw.cn", "https://api.ip.sb/ip", "https://ipv4.icanhazip.com")
         }
         val ipv6Endpoints = if (vpnState.value.isConnected) {
-            listOf("https://api6.ipify.org", "https://v6.ident.me", "https://6.ipw.cn")
+            listOf("https://ipv6.icanhazip.com", "https://api6.ipify.org", "https://6.ipw.cn")
         } else {
-            listOf("https://6.ipw.cn", "https://api6.ipify.org")
+            listOf("https://6.ipw.cn", "https://ipv6.icanhazip.com")
         }
 
         // Race IPv4 and IPv6 in parallel — first valid result wins

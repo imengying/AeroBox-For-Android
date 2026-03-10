@@ -114,13 +114,14 @@ object DefaultNetworkMonitor {
             -1
         }
 
-        // Skip if interface hasn't changed — avoids flooding libbox with
-        // duplicate updates on repeated onCapabilitiesChanged callbacks.
-        if (interfaceName == lastInterfaceName && interfaceIndex == lastInterfaceIndex) return
-        lastInterfaceName = interfaceName
-        lastInterfaceIndex = interfaceIndex
+        // Only log when interface actually changes to reduce noise
+        if (interfaceName != lastInterfaceName || interfaceIndex != lastInterfaceIndex) {
+            lastInterfaceName = interfaceName
+            lastInterfaceIndex = interfaceIndex
+            RuntimeLogBuffer.append("debug", "Default interface updated: name=$interfaceName, index=$interfaceIndex")
+        }
 
-        RuntimeLogBuffer.append("debug", "Default interface updated: name=$interfaceName, index=$interfaceIndex")
+        // Always notify libbox — needed after service reload even if interface unchanged
         runCatching {
             listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
         }.onFailure {
