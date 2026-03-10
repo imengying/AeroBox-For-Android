@@ -69,7 +69,6 @@ fun SettingsScreen(
     val enableHttpInbound by viewModel.enableHttpInbound.collectAsStateWithLifecycle()
     val ipv6Mode by viewModel.ipv6Mode.collectAsStateWithLifecycle()
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
-    val enableGeoRules by viewModel.enableGeoRules.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var showDnsDialog by remember { mutableStateOf(false) }

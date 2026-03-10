@@ -49,7 +49,6 @@ object DefaultNetworkMonitor {
             capabilities: NetworkCapabilities
         ) {
             if (network == defaultNetwork) {
-                RuntimeLogBuffer.append("debug", "Default network capabilities changed: $network")
                 networkChangedCallback?.invoke(network)
                 notifyInterfaceUpdate(network)
             }
@@ -120,10 +119,6 @@ object DefaultNetworkMonitor {
 
         runCatching {
             listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
-            RuntimeLogBuffer.append(
-                "debug",
-                "Default interface updated: name=$interfaceName, index=$interfaceIndex"
-            )
         }.onFailure {
             Log.w(TAG, "updateDefaultInterface failed", it)
             RuntimeLogBuffer.append("warn", "updateDefaultInterface failed: ${it.message ?: it}")

@@ -36,13 +36,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -57,6 +57,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         const val POST_CONNECT_IP_DETECT_DELAY_MS = 500L
         const val NODE_TEST_TIMEOUT_MS = 5000
         const val NODE_TEST_CONCURRENCY = 4
+        val IPV4_REGEX = Regex("""^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$""")
+        val IPV6_REGEX = Regex("""^[0-9A-Fa-f:]+(%[0-9A-Za-z._~-]+)?$""")
     }
 
     private val appContext = application.applicationContext
@@ -91,6 +93,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val allNodes: StateFlow<List<ProxyNode>> = nodeDao.getAllNodes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val _nodeSortOrder = MutableStateFlow<Map<Long, List<Long>>>(emptyMap())
+    val nodeSortOrder: StateFlow<Map<Long, List<Long>>> = _nodeSortOrder.asStateFlow()
+
     val subscriptions: StateFlow<List<Subscription>> = subscriptionRepository
         .getAllSubscriptions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -116,9 +121,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var detectIpJob: Job? = null
     private var connectWatchdogJob: Job? = null
     private val ipDetectClient = OkHttpClient.Builder()
-        .callTimeout(1, TimeUnit.SECONDS)
-        .connectTimeout(1, TimeUnit.SECONDS)
-        .readTimeout(1, TimeUnit.SECONDS)
+        .callTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
     init {
@@ -179,7 +184,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
                 _memoryUsage.value = readMemoryUsage()
-                delay(2_000)
+                delay(5_000)
             }
         }
     }
@@ -257,7 +262,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             VpnStateManager.clearLastError()
             when (val result = vpnRepository.connectNode(node, refreshDueSubscriptions = true)) {
                 is VpnConnectionResult.Success -> {
-                    _uiMessage.tryEmit(context.getString(com.aerobox.R.string.notification_connecting))
                     startConnectWatchdog(context)
                 }
 
@@ -334,17 +338,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun testSubscriptionNodesLatency(nodes: List<ProxyNode>) {
         viewModelScope.launch {
             val semaphore = Semaphore(NODE_TEST_CONCURRENCY)
+            val latencyResults = java.util.concurrent.ConcurrentHashMap<Long, Int>()
             val jobs = nodes.map { node ->
                 launch {
                     subscriptionRepository.updateNodeLatency(node.id, NodeLatencyState.TESTING)
                     val latency = semaphore.withPermit { testNodeLatency(node) }
-                    subscriptionRepository.updateNodeLatency(
-                        node.id,
-                        latency.takeIf { it > 0 } ?: NodeLatencyState.FAILED
-                    )
+                    val finalLatency = latency.takeIf { it > 0 } ?: NodeLatencyState.FAILED
+                    subscriptionRepository.updateNodeLatency(node.id, finalLatency)
+                    latencyResults[node.id] = finalLatency
                 }
             }
             jobs.forEach { it.join() }
+
+            // Compute sorted order snapshot: valid latency ascending, then FAILED, then rest
+            val subscriptionId = nodes.firstOrNull()?.subscriptionId ?: return@launch
+            val sortedIds = nodes.sortedWith(
+                compareBy<ProxyNode> {
+                    val lat = latencyResults[it.id] ?: it.latency
+                    when {
+                        lat > 0 -> 0    // valid latency first
+                        lat == NodeLatencyState.FAILED -> 1
+                        else -> 2        // UNTESTED / TESTING last
+                    }
+                }.thenBy {
+                    val lat = latencyResults[it.id] ?: it.latency
+                    if (lat > 0) lat else Int.MAX_VALUE
+                }
+            ).map { it.id }
+
+            _nodeSortOrder.update { it + (subscriptionId to sortedIds) }
         }
     }
 
@@ -434,11 +456,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             "https://v6.ident.me"
         )
 
-        val preferIpv6Only = isIpv6Literal(node?.server.orEmpty())
         val useProxyFriendlyEndpoints = vpnState.value.isConnected
         val ipv4Endpoints = if (useProxyFriendlyEndpoints) proxiedIpv4Endpoints else directIpv4Endpoints + proxiedIpv4Endpoints
         val ipv6Endpoints = if (useProxyFriendlyEndpoints) proxiedIpv6Endpoints else directIpv6Endpoints + proxiedIpv6Endpoints
-        val endpointGroups = if (preferIpv6Only) listOf(ipv6Endpoints) else listOf(ipv4Endpoints, ipv6Endpoints)
+        val endpointGroups = listOf(ipv4Endpoints, ipv6Endpoints)
 
         for (group in endpointGroups) {
             for (endpoint in group) {
@@ -460,26 +481,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         "检测失败，点击重试"
     }
 
-    private fun isIpv6Literal(host: String): Boolean {
-        val value = host
-            .trim()
-            .removePrefix("[")
-            .removeSuffix("]")
-            .substringBefore('%')
-        if (!value.contains(':')) return false
-        return value.all { it.isDigit() || it in "abcdefABCDEF:." }
-    }
-
     private fun isLikelyIpAddress(value: String): Boolean {
         val text = value.trim()
-        val ipv4 = Regex("""^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$""")
-        val ipv6 = Regex("""^[0-9A-Fa-f:]+(%[0-9A-Za-z._~-]+)?$""")
-        return ipv4.matches(text) || (text.contains(':') && ipv6.matches(text))
+        return IPV4_REGEX.matches(text) || (text.contains(':') && IPV6_REGEX.matches(text))
     }
 
     private fun handleConnectionFailure(context: Context, rawError: String) {
         val issue = ConnectionDiagnostics.classify(rawError)
         _connectionIssue.value = issue
         _uiMessage.tryEmit("${context.getString(com.aerobox.R.string.operation_failed)}: ${issue.title}")
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        ipDetectClient.dispatcher.executorService.shutdown()
+        ipDetectClient.connectionPool.evictAll()
     }
 }

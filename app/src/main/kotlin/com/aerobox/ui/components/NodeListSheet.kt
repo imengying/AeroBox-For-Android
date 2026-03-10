@@ -53,6 +53,7 @@ fun NodeListSheet(
     nodes: List<ProxyNode>,
     subscriptions: List<Subscription> = emptyList(),
     selectedNodeId: Long,
+    nodeSortOrder: Map<Long, List<Long>> = emptyMap(),
     onNodeSelected: (ProxyNode) -> Unit,
     onTestSubscription: (List<ProxyNode>) -> Unit,
     onTestNode: (ProxyNode) -> Unit,
@@ -122,9 +123,22 @@ fun NodeListSheet(
                         else -> grouped.firstOrNull()?.first
                     }
                 }
-                val currentGroupNodes = grouped.firstOrNull { (subId, _) ->
-                    subId == selectedSubscriptionId
-                }?.second.orEmpty()
+                val currentGroupNodes = remember(grouped, selectedSubscriptionId, nodeSortOrder) {
+                    val groupNodes = grouped.firstOrNull { (subId, _) ->
+                        subId == selectedSubscriptionId
+                    }?.second.orEmpty()
+                    val sortedIds = selectedSubscriptionId?.let { nodeSortOrder[it] }
+                    if (sortedIds != null) {
+                        val idToNode = groupNodes.associateBy { it.id }
+                        val sorted = sortedIds.mapNotNull { idToNode[it] }
+                        // Append any nodes not in the snapshot (e.g. newly added)
+                        val sortedIdSet = sortedIds.toSet()
+                        val remaining = groupNodes.filter { it.id !in sortedIdSet }
+                        sorted + remaining
+                    } else {
+                        groupNodes
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

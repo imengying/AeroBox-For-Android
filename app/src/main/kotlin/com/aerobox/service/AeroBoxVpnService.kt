@@ -38,7 +38,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.net.InetAddress
 
 /**
@@ -75,6 +74,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var pendingSwitchConfig: String? = null
     private var pendingSwitchNodeId: Long = -1L
     private var hasIpv6Tun = false
+    private var cachedConnectedNode: com.aerobox.data.model.ProxyNode? = null
 
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -171,6 +171,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 }
 
                 val overrides = buildOverrideOptions()
+                cachedConnectedNode = resolveCurrentNode()
                 server.startOrReloadService(config, overrides)
                 RuntimeLogBuffer.append("info", "startOrReloadService invoked")
                 startSpeedTicker()
@@ -184,19 +185,13 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }
     }
 
-    private fun buildOverrideOptions(): OverrideOptions {
+    private suspend fun buildOverrideOptions(): OverrideOptions {
         return OverrideOptions().apply {
             // Per-app proxy
-            val perAppEnabled = runBlocking {
-                PreferenceManager.perAppProxyEnabledFlow(applicationContext).first()
-            }
+            val perAppEnabled = PreferenceManager.perAppProxyEnabledFlow(applicationContext).first()
             if (perAppEnabled) {
-                val mode = runBlocking {
-                    PreferenceManager.perAppProxyModeFlow(applicationContext).first()
-                }
-                val packages = runBlocking {
-                    PreferenceManager.perAppProxyPackagesFlow(applicationContext).first()
-                }
+                val mode = PreferenceManager.perAppProxyModeFlow(applicationContext).first()
+                val packages = PreferenceManager.perAppProxyPackagesFlow(applicationContext).first()
                 if (mode == "whitelist") {
                     includePackage = PlatformInterfaceWrapper.StringArray(
                         (packages + packageName).iterator()
@@ -210,9 +205,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }
     }
 
-    private suspend fun resolveCurrentNode(explicitNodeId: Long?): com.aerobox.data.model.ProxyNode? {
+    private suspend fun resolveCurrentNode(): com.aerobox.data.model.ProxyNode? {
         val nodeId = when {
-            explicitNodeId != null && explicitNodeId > 0L -> explicitNodeId
             lastNodeId > 0L -> lastNodeId
             else -> PreferenceManager.lastSelectedNodeIdFlow(applicationContext).first()
         }
@@ -294,7 +288,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     override fun serviceReload() {
         RuntimeLogBuffer.append("info", "Service reloaded")
         serviceScope.launch {
-            val currentNode = resolveCurrentNode(null)
+            val currentNode = resolveCurrentNode()
             VpnStateManager.updateCurrentNode(currentNode)
             if (VpnStateManager.vpnState.value.isConnected) {
                 val state = VpnStateManager.vpnState.value
@@ -304,7 +298,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     contentText = "↑ $upSpeed  ↓ $downSpeed",
                     connected = true
                 )
-                val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                val nm = notificationManager
                 nm.notify(NOTIFICATION_ID, notification)
             }
         }
@@ -476,9 +470,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         val pfd = builder.establish()
             ?: error("android: failed to establish VPN interface")
         vpnInterface = pfd
-        val connectedNode = runBlocking {
-            resolveCurrentNode(null)
-        }
+        val connectedNode = cachedConnectedNode
         VpnStateManager.clearLastError()
         VpnStateManager.updateConnectionState(true, connectedNode)
         RuntimeLogBuffer.append(
@@ -489,14 +481,12 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         )
         val initialSpeedText = "↑ 0 B/s  ↓ 0 B/s"
         val notification = buildNotification(contentText = initialSpeedText, connected = true)
-        val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-        nm.notify(NOTIFICATION_ID, notification)
+        notificationManager.notify(NOTIFICATION_ID, notification)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             if (hasIpv6Tun) {
                 // Explicitly set null on the VPN service after establish() to
                 // override any specific network that was set before openTun.
                 runCatching { setUnderlyingNetworks(null) }
-                RuntimeLogBuffer.append("debug", "Post-establish underlying networks: null (IPv6)")
             } else {
                 updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
             }
@@ -585,15 +575,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }
         runCatching {
             setUnderlyingNetworks(network?.let { arrayOf(it) })
-        }.onSuccess {
-            RuntimeLogBuffer.append(
-                "debug",
-                if (network != null) {
-                    "Underlying network applied: $network"
-                } else {
-                    "Underlying network cleared"
-                }
-            )
         }.onFailure {
             RuntimeLogBuffer.append(
                 "warn",
@@ -604,19 +585,24 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     // ─── Notification ───
 
-    private fun buildNotification(contentText: String = "", connected: Boolean = false): Notification {
-        val pendingIntent = PendingIntent.getActivity(
+    private val notificationManager by lazy {
+        getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+    }
+    private val contentPendingIntent by lazy {
+        PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+    private val stopPendingIntent by lazy {
         val stopIntent = Intent(ACTION_STOP).setPackage(packageName)
-        val stopPendingIntent = PendingIntent.getBroadcast(
-            this,
-            101,
-            stopIntent,
+        PendingIntent.getBroadcast(
+            this, 101, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+    private val switchPendingIntent by lazy {
         val switchIntent = Intent(this, NotificationSwitchActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -624,13 +610,13 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     Intent.FLAG_ACTIVITY_NO_HISTORY
             )
         }
-        val switchPendingIntent = PendingIntent.getActivity(
-            this,
-            102,
-            switchIntent,
+        PendingIntent.getActivity(
+            this, 102, switchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
 
+    private fun buildNotification(contentText: String = "", connected: Boolean = false): Notification {
         val title = if (connected) {
             VpnStateManager.vpnState.value.currentNode
                 ?.name
@@ -651,7 +637,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             .setContentText(mergedContent)
             .setSubText(null)
             .setSmallIcon(R.drawable.ic_stat_aerobox)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(contentPendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(true)
@@ -700,14 +686,12 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 val currentDownload = currentStats?.downloadBytes ?: prevDownload
                 val uploadSpeed = (currentUpload - prevUpload).coerceAtLeast(0L)
                 val downloadSpeed = (currentDownload - prevDownload).coerceAtLeast(0L)
-                val uploadDelta = (currentUpload - prevUpload).coerceAtLeast(0L)
-                val downloadDelta = (currentDownload - prevDownload).coerceAtLeast(0L)
 
                 VpnStateManager.updateTrafficStats(
                     uploadSpeed = uploadSpeed,
                     downloadSpeed = downloadSpeed,
-                    uploadDelta = uploadDelta,
-                    downloadDelta = downloadDelta
+                    uploadDelta = uploadSpeed,
+                    downloadDelta = downloadSpeed
                 )
 
                 prevUpload = currentUpload
@@ -715,8 +699,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
                 val text = "↑ ${NetworkUtils.formatBytes(uploadSpeed)}/s  ↓ ${NetworkUtils.formatBytes(downloadSpeed)}/s"
                 val notification = buildNotification(contentText = text, connected = true)
-                val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-                nm.notify(NOTIFICATION_ID, notification)
+                notificationManager.notify(NOTIFICATION_ID, notification)
             }
         }
     }
@@ -733,9 +716,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private fun attemptReconnect() {
         val config = lastConfig ?: return
         serviceScope.launch {
-            val autoReconnect = runBlocking {
-                PreferenceManager.autoReconnectFlow(applicationContext).first()
-            }
+            val autoReconnect = PreferenceManager.autoReconnectFlow(applicationContext).first()
             if (!autoReconnect) {
                 stopService("Stopping service: auto reconnect disabled")
                 return@launch

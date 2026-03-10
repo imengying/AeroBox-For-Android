@@ -82,10 +82,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         PreferenceManager.setAutoConnect(appContext, enabled)
     }
 
-    suspend fun setRoutingMode(mode: RoutingMode) {
-        PreferenceManager.setRoutingMode(appContext, mode)
-    }
-
     suspend fun setRemoteDns(dns: String) {
         PreferenceManager.setRemoteDns(appContext, dns)
     }

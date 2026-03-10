@@ -157,7 +157,7 @@ object ConfigGenerator {
     ): JSONObject {
         val bootstrapServer = buildDnsServer(
             tag = "bootstrap",
-            dns = bootstrapDnsAddress(ipv6Mode),
+            dns = bootstrapDnsAddress(),
             ipv6Mode = ipv6Mode
         )
 
@@ -217,7 +217,7 @@ object ConfigGenerator {
         return dns
     }
 
-    private fun bootstrapDnsAddress(ipv6Mode: IPv6Mode): String {
+    private fun bootstrapDnsAddress(): String {
         return "1.1.1.1"
     }
 
@@ -428,9 +428,7 @@ object ConfigGenerator {
     ): JSONArray {
         val inbounds = JSONArray()
         val tunAddresses = JSONArray().apply {
-            if (!ipv6Mode.usesIpv6OnlyTun()) {
-                put("172.19.0.1/28")
-            }
+            put("172.19.0.1/28")
             if (ipv6Mode.enablesIpv6Tun()) {
                 put("fdfe:dcba:9876::1/126")
             }
@@ -710,19 +708,11 @@ object ConfigGenerator {
     private fun buildDomainResolver(serverTag: String, ipv6Mode: IPv6Mode): JSONObject {
         return JSONObject()
             .put("server", serverTag)
-            .apply {
-                val strategy = ipv6Mode.domainStrategy()
-                if (strategy.isNotEmpty()) {
-                    put("strategy", strategy)
-                }
-            }
+            .put("strategy", ipv6Mode.domainStrategy())
     }
 
     private fun JSONObject.putDomainStrategyIfSet(ipv6Mode: IPv6Mode): JSONObject {
-        val strategy = ipv6Mode.domainStrategy()
-        if (strategy.isNotEmpty()) {
-            put("strategy", strategy)
-        }
+        put("strategy", ipv6Mode.domainStrategy())
         return this
     }
 

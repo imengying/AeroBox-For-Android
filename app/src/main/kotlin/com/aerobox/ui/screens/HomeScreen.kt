@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -70,6 +69,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val selectedNode by viewModel.selectedNode.collectAsStateWithLifecycle()
     val connectionDuration by viewModel.connectionDuration.collectAsStateWithLifecycle()
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
+    val nodeSortOrder by viewModel.nodeSortOrder.collectAsStateWithLifecycle()
     val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
     val detectedIp by viewModel.detectedIp.collectAsStateWithLifecycle()
     val memoryUsage by viewModel.memoryUsage.collectAsStateWithLifecycle()
@@ -214,6 +214,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             nodes = allNodes,
             subscriptions = subscriptions,
             selectedNodeId = selectedNode?.id ?: -1,
+            nodeSortOrder = nodeSortOrder,
             onNodeSelected = { node ->
                 viewModel.selectNode(node)
                 showNodeList = false
