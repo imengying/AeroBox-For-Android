@@ -167,7 +167,6 @@ object ConfigGenerator {
             tag = "local",
             dns = normalizeLocalDnsAddress(localDns),
             resolverTag = "bootstrap",
-            strategy = destinationDomainStrategy(ipv6Mode),
             ipv6Mode = ipv6Mode
         )
 
@@ -183,7 +182,6 @@ object ConfigGenerator {
             dns = normalizeRemoteDnsAddress(remoteDns, enableDoh),
             detour = "proxy",
             resolverTag = "local",
-            strategy = destinationDomainStrategy(ipv6Mode),
             ipv6Mode = ipv6Mode
         )
 
@@ -228,7 +226,6 @@ object ConfigGenerator {
         dns: String,
         detour: String? = null,
         resolverTag: String? = null,
-        strategy: String? = null,
         ipv6Mode: IPv6Mode
     ): JSONObject {
         val spec = parseDnsServer(dns)
@@ -240,7 +237,6 @@ object ConfigGenerator {
             .apply {
                 detour?.let { put("detour", it) }
                 spec.path?.let { put("path", it) }
-                strategy?.let { put("strategy", it) }
                 if (!isIpLiteral(spec.server)) {
                     put(
                         "domain_resolver",

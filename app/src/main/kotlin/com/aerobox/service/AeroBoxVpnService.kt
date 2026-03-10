@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.IpPrefix
 import android.net.Network
 import android.net.VpnService
 import android.os.Build
@@ -38,6 +39,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.net.InetAddress
 
 /**
  * AeroBox VPN Service — implements PlatformInterfaceWrapper so libbox
@@ -380,15 +382,43 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         inet6Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
         if (options.autoRoute) {
-            builder.addDnsServer(options.dnsServerAddress.value)
-            builder.addRoute("0.0.0.0", 0)
-            if (inet6Addresses.isNotEmpty()) {
-                builder.addRoute("::", 0)
+            val inet4Routes = readTunAddressList(options, "inet4RouteAddress")
+            val inet6Routes = readTunAddressList(options, "inet6RouteAddress")
+            val inet4ExcludedRoutes = readTunAddressList(options, "inet4RouteExcludeAddress")
+            val inet6ExcludedRoutes = readTunAddressList(options, "inet6RouteExcludeAddress")
+            val vpnDns = resolveVpnDnsServer(options, inet4Addresses, inet6Addresses)
+
+            vpnDns?.let { builder.addDnsServer(it) }
+
+            val hasExplicitRoutes = inet4Routes.isNotEmpty() || inet6Routes.isNotEmpty()
+            if (hasExplicitRoutes) {
+                inet4Routes.forEach { (address, prefix) ->
+                    builder.addRouteCompat(address, prefix)
+                }
+                inet6Routes.forEach { (address, prefix) ->
+                    builder.addRouteCompat(address, prefix)
+                }
+                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
+                    inet4ExcludedRoutes.forEach { (address, prefix) ->
+                        builder.excludeRoute(IpPrefix("$address/$prefix"))
+                    }
+                    inet6ExcludedRoutes.forEach { (address, prefix) ->
+                        builder.excludeRoute(IpPrefix("$address/$prefix"))
+                    }
+                }
+            } else {
+                builder.addRoute("0.0.0.0", 0)
+                if (inet6Addresses.isNotEmpty()) {
+                    builder.addRoute("::", 0)
+                }
             }
             RuntimeLogBuffer.append(
                 "debug",
                 "Tun prepared: ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
-                    "forcedDefaultRoutes=true, vpnDns=${options.dnsServerAddress.value}"
+                    "forcedDefaultRoutes=${!hasExplicitRoutes}, " +
+                    "routes4=${inet4Routes.size}, routes6=${inet6Routes.size}, " +
+                    "exclude4=${inet4ExcludedRoutes.size}, exclude6=${inet6ExcludedRoutes.size}, " +
+                    "vpnDns=${vpnDns ?: "none"}"
             )
         }
 
@@ -424,6 +454,95 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
         }
         return pfd.fd
+    }
+
+    private fun Builder.addRouteCompat(address: String, prefix: Int) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
+            addRoute(IpPrefix("$address/$prefix"))
+        } else {
+            addRoute(address, prefix)
+        }
+    }
+
+    private fun readTunAddressList(options: TunOptions, memberName: String): List<Pair<String, Int>> {
+        val iterator = resolveNoArgMember(options, memberName) ?: return emptyList()
+        val pairs = mutableListOf<Pair<String, Int>>()
+        while (iteratorHasNext(iterator)) {
+            val item = iteratorNext(iterator) ?: break
+            val address = readStringMember(item, "address") ?: continue
+            val prefix = readIntMember(item, "prefix") ?: continue
+            pairs += address to prefix
+        }
+        return pairs
+    }
+
+    private fun resolveVpnDnsServer(
+        options: TunOptions,
+        inet4Addresses: List<Pair<String, Int>>,
+        inet6Addresses: List<Pair<String, Int>>
+    ): String? {
+        val raw = options.dnsServerAddress.value.trim()
+        if (raw.isBlank()) return null
+        return when (raw) {
+            "[ipv4]" -> deriveTunnelRouterAddress(inet4Addresses.firstOrNull()?.first)
+            "[ipv6]" -> deriveTunnelRouterAddress(inet6Addresses.firstOrNull()?.first)
+            else -> raw
+        }
+    }
+
+    private fun deriveTunnelRouterAddress(address: String?): String? {
+        val normalized = address?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val literal = normalized.removePrefix("[").removeSuffix("]").substringBefore('%')
+        val bytes = runCatching { InetAddress.getByName(literal).address.clone() }.getOrNull() ?: return null
+        for (index in bytes.lastIndex downTo 0) {
+            val value = bytes[index].toInt() and 0xFF
+            if (value < 0xFF) {
+                bytes[index] = (value + 1).toByte()
+                for (tail in index + 1..bytes.lastIndex) {
+                    bytes[tail] = 0
+                }
+                return InetAddress.getByAddress(bytes).hostAddress
+            }
+        }
+        return null
+    }
+
+    private fun resolveNoArgMember(target: Any, memberName: String): Any? {
+        val getterName = "get" + memberName.replaceFirstChar { it.uppercaseChar() }
+        return runCatching {
+            target.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && (method.name == memberName || method.name == getterName)
+            }?.invoke(target)
+        }.getOrNull()
+    }
+
+    private fun iteratorHasNext(iterator: Any): Boolean {
+        return runCatching {
+            iterator.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && method.name == "hasNext"
+            }?.invoke(iterator) as? Boolean
+        }.getOrNull() == true
+    }
+
+    private fun iteratorNext(iterator: Any): Any? {
+        return runCatching {
+            iterator.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && method.name == "next"
+            }?.invoke(iterator)
+        }.getOrNull()
+    }
+
+    private fun readStringMember(target: Any, memberName: String): String? {
+        return resolveNoArgMember(target, memberName)?.toString()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun readIntMember(target: Any, memberName: String): Int? {
+        val value = resolveNoArgMember(target, memberName) ?: return null
+        return when (value) {
+            is Int -> value
+            is Number -> value.toInt()
+            else -> value.toString().toIntOrNull()
+        }
     }
 
     private fun updateUnderlyingNetwork(network: Network?) {
