@@ -607,6 +607,7 @@ object ConfigGenerator {
             .put(
                 JSONObject()
                     .put("action", "sniff")
+                    .put("override_destination", true)
             )
             .put(
                 JSONObject()
