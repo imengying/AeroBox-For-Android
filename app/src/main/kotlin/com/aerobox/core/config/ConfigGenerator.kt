@@ -607,7 +607,6 @@ object ConfigGenerator {
             .put(
                 JSONObject()
                     .put("action", "sniff")
-                    .put("override_destination", true)
             )
             .put(
                 JSONObject()
@@ -624,6 +623,18 @@ object ConfigGenerator {
                     .put("ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
                     .put("source_ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
                     .put("action", "reject")
+            )
+            .put(
+                JSONObject()
+                    .put("ip_cidr", JSONArray()
+                        .put("1.1.1.1/32").put("1.0.0.1/32")
+                        .put("8.8.8.8/32").put("8.8.4.4/32")
+                        .put("9.9.9.9/32").put("149.112.112.112/32")
+                        .put("223.5.5.5/32").put("223.6.6.6/32")
+                        .put("119.29.29.29/32").put("182.254.116.116/32")
+                    )
+                    .put("action", "route")
+                    .put("outbound", "direct")
             )
     }
 
