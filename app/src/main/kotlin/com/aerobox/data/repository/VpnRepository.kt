@@ -264,6 +264,11 @@ class VpnRepository(private val context: Context) {
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
         RuntimeLogBuffer.append("debug", "Generated config JSON:\n$configJson")
+        try {
+            java.io.File(context.getExternalFilesDir(null), "debug_config.json")
+                .writeText(configJson)
+            RuntimeLogBuffer.append("info", "Config written to: ${context.getExternalFilesDir(null)}/debug_config.json")
+        } catch (_: Exception) {}
         return configJson
     }
 
