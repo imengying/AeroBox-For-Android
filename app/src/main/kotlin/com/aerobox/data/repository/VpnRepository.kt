@@ -144,7 +144,6 @@ class VpnRepository(private val context: Context) {
         timeoutMs: Int = 5000
     ): Int {
         return withContext(Dispatchers.IO) {
-            RuntimeLogBuffer.append("debug", "SingBoxNative.version=${SingBoxNative.getVersion()}")
             val userLocalDns = PreferenceManager.localDnsFlow(context).first()
             val ipv6Mode = PreferenceManager.ipv6ModeFlow(context).first()
             val safeLocalDns = if (userLocalDns.contains("[")) "223.5.5.5" else userLocalDns
@@ -152,10 +151,6 @@ class VpnRepository(private val context: Context) {
                 node = node,
                 localDns = safeLocalDns,
                 ipv6Mode = ipv6Mode
-            )
-            RuntimeLogBuffer.append(
-                "debug",
-                "urlTest start: node=${node.name.ifBlank { "unnamed node" }}, timeout=${timeoutMs}ms"
             )
             val parseError = checkConfig(config)
             if (parseError != null) {
@@ -169,10 +164,6 @@ class VpnRepository(private val context: Context) {
                 testUrl = testUrl,
                 timeoutMs = timeoutMs
             )
-            RuntimeLogBuffer.append(
-                if (result > 0) "debug" else "warn",
-                "urlTest result: node=${node.name.ifBlank { "unnamed node" }}, latency=$result"
-            )
             result
         }
     }
@@ -181,21 +172,6 @@ class VpnRepository(private val context: Context) {
         RuntimeLogBuffer.append(
             "info",
             "Generating config for ${node.name.ifBlank { "unnamed node" }}"
-        )
-        RuntimeLogBuffer.append(
-            "debug",
-            buildString {
-                append("Node summary: ")
-                append("type=").append(node.type.name)
-                append(", serverType=").append(node.serverType())
-                node.network?.takeIf { it.isNotBlank() }?.let { append(", network=").append(it) }
-                append(", tls=").append(node.tls)
-                node.security?.takeIf { it.isNotBlank() }?.let { append(", security=").append(it) }
-                node.flow?.takeIf { it.isNotBlank() }?.let { append(", flow=").append(it) }
-                node.packetEncoding?.takeIf { it.isNotBlank() }?.let { append(", packetEncoding=").append(it) }
-                if (!node.publicKey.isNullOrBlank()) append(", reality=true")
-                if (node.allowInsecure) append(", insecure=true")
-            }
         )
         withContext(Dispatchers.IO) {
             GeoAssetManager.ensureBundledAssets(context)
@@ -213,14 +189,6 @@ class VpnRepository(private val context: Context) {
         val enableGeoCnIpRule = PreferenceManager.enableGeoCnIpRuleFlow(context).first()
         val enableGeoAdsBlock = PreferenceManager.enableGeoAdsBlockFlow(context).first()
         val enableGeoBlockQuic = PreferenceManager.enableGeoBlockQuicFlow(context).first()
-        RuntimeLogBuffer.append(
-            "debug",
-            "Config options: mode=$routingMode, doh=$enableDoh, socksIn=$enableSocksInbound, " +
-                "httpIn=$enableHttpInbound, ipv6Mode=$ipv6Mode, " +
-                "geoRules=$enableGeoRules, cnDomain=$enableGeoCnDomainRule, cnIp=$enableGeoCnIpRule, " +
-                "ads=$enableGeoAdsBlock, blockQuic=$enableGeoBlockQuic"
-        )
-
         val geoIpCnRuleSetPath = if (enableGeoRules) {
             GeoAssetManager
                 .getGeoIpFile(context)
@@ -246,7 +214,7 @@ class VpnRepository(private val context: Context) {
             null
         }
 
-        val configJson = ConfigGenerator.generateSingBoxConfig(
+        return ConfigGenerator.generateSingBoxConfig(
             node = node,
             routingMode = routingMode,
             remoteDns = remoteDns,
@@ -263,26 +231,5 @@ class VpnRepository(private val context: Context) {
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
-        RuntimeLogBuffer.append("debug", "Generated config JSON:\n$configJson")
-        try {
-            java.io.File(context.getExternalFilesDir(null), "debug_config.json")
-                .writeText(configJson)
-            RuntimeLogBuffer.append("info", "Config written to: ${context.getExternalFilesDir(null)}/debug_config.json")
-        } catch (_: Exception) {}
-        return configJson
-    }
-
-    private fun ProxyNode.serverType(): String {
-        val host = server.trim().removePrefix("[").removeSuffix("]").substringBefore('%')
-        val isIpv4 = host.split('.').let { parts ->
-            parts.size == 4 && parts.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }
-        }
-        if (isIpv4) return "ipv4"
-        val isIpv6 = host.contains(':') &&
-            host.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
-        return when {
-            isIpv6 -> "ipv6"
-            else -> "domain"
-        }
     }
 }

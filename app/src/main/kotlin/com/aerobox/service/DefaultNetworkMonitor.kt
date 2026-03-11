@@ -30,10 +30,6 @@ object DefaultNetworkMonitor {
     private var registered = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // Dedup: only notify libbox when the interface actually changes
-    private var lastInterfaceName: String? = null
-    private var lastInterfaceIndex: Int = -1
-
     private val networkRequest: NetworkRequest = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -42,7 +38,6 @@ object DefaultNetworkMonitor {
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             defaultNetwork = network
-            RuntimeLogBuffer.append("debug", "Default network available: $network")
             notifyInterfaceUpdate(network)
         }
 
@@ -58,8 +53,6 @@ object DefaultNetworkMonitor {
         override fun onLost(network: Network) {
             if (network == defaultNetwork) {
                 defaultNetwork = null
-                lastInterfaceName = null
-                lastInterfaceIndex = -1
                 RuntimeLogBuffer.append("warn", "Default network lost: $network")
                 listener?.runCatching {
                     updateDefaultInterface("", -1, false, false)
@@ -91,8 +84,6 @@ object DefaultNetworkMonitor {
         registered = false
         defaultNetwork = null
         listener = null
-        lastInterfaceName = null
-        lastInterfaceIndex = -1
     }
 
     fun setListener(listener: InterfaceUpdateListener?) {
@@ -112,13 +103,6 @@ object DefaultNetworkMonitor {
             NetworkInterface.getByName(interfaceName)?.index ?: -1
         } catch (_: Exception) {
             -1
-        }
-
-        // Only log when interface actually changes to reduce noise
-        if (interfaceName != lastInterfaceName || interfaceIndex != lastInterfaceIndex) {
-            lastInterfaceName = interfaceName
-            lastInterfaceIndex = interfaceIndex
-            RuntimeLogBuffer.append("debug", "Default interface updated: name=$interfaceName, index=$interfaceIndex")
         }
 
         // Always notify libbox — needed after service reload even if interface unchanged

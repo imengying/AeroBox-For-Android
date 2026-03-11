@@ -156,13 +156,11 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 val server = commandServer ?: CommandServer(this@AeroBoxVpnService, this@AeroBoxVpnService).also {
                     it.start()
                     commandServer = it
-                    RuntimeLogBuffer.append("debug", "CommandServer started")
                 }
 
                 val overrides = buildOverrideOptions()
                 cachedConnectedNode = resolveCurrentNode()
                 server.startOrReloadService(config, overrides)
-                RuntimeLogBuffer.append("info", "startOrReloadService invoked")
                 startSpeedTicker()
 
             }.onFailure { e ->
@@ -309,7 +307,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     override fun openTun(options: TunOptions): Int {
         if (prepare(this) != null) error("android: missing vpn permission")
-        RuntimeLogBuffer.append("debug", "Opening VPN TUN interface")
 
         val builder = Builder()
             .setSession("AeroBox")
@@ -391,15 +388,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                     toIpPrefixOrNull(address, prefix)?.let { builder.excludeRoute(it) }
                 }
             }
-            val ipv6Dns = if (hasIpv6) inet6Addresses.firstOrNull()?.first else null
-            RuntimeLogBuffer.append(
-                "debug",
-                "Tun prepared: ipv4=${inet4Addresses.size}, ipv6=${inet6Addresses.size}, " +
-                    "routes4=${inet4Routes.size}, routes6=${inet6Routes.size}, " +
-                    "exclude4=${inet4ExcludedRoutes.size}, exclude6=${inet6ExcludedRoutes.size}, " +
-                    "vpnDns=${vpnDns ?: "none"}" +
-                    (ipv6Dns?.let { ", vpnDns6=$it" } ?: "")
-            )
         }
 
         // Per-app proxy from OverrideOptions (handled by libbox include/exclude)
