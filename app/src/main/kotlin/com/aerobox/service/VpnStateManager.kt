@@ -63,12 +63,6 @@ object VpnStateManager {
         }
     }
 
-    fun resetSpeedStats() {
-        _vpnState.update { current ->
-            current.copy(uploadSpeed = 0, downloadSpeed = 0)
-        }
-    }
-
     fun resetTrafficSession() {
         _vpnState.update { current ->
             current.copy(

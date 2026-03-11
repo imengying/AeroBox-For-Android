@@ -124,7 +124,7 @@ object ConfigGenerator {
                 .put("auto_detect_interface", false)
                 .put(
                     "default_domain_resolver",
-                    buildDomainResolver("local", ipv6Mode)
+                    buildDestinationDomainResolver("local")
                 )
                 .put("final", PROXY_OUTBOUND_TAG)
         )
@@ -173,7 +173,7 @@ object ConfigGenerator {
             return JSONObject()
                 .put("servers", JSONArray().put(localServer).put(bootstrapServer))
                 .put("final", "local")
-                .putDomainStrategyIfSet(ipv6Mode)
+                .putDestinationDomainStrategy()
         }
 
         val remoteServer = buildDnsServer(
@@ -193,7 +193,7 @@ object ConfigGenerator {
                     .put(bootstrapServer)
             )
             .put("final", "remote")
-            .putDomainStrategyIfSet(ipv6Mode)
+            .putDestinationDomainStrategy()
 
         // Only add DNS routing rules for rule-based modes
         if (routingMode == RoutingMode.RULE_BASED) {
@@ -240,7 +240,7 @@ object ConfigGenerator {
                 if (!isIpLiteral(spec.server)) {
                     put(
                         "domain_resolver",
-                        buildDomainResolver(resolverTag ?: "bootstrap", ipv6Mode)
+                        buildDialDomainResolver(resolverTag ?: "bootstrap", ipv6Mode)
                     )
                 }
             }
@@ -495,7 +495,7 @@ object ConfigGenerator {
             .put("auto_detect_interface", true)
             .put(
                 "default_domain_resolver",
-                buildDomainResolver("local", ipv6Mode)
+                buildDestinationDomainResolver("local")
             )
 
         val ruleSets = JSONArray()
@@ -688,7 +688,7 @@ object ConfigGenerator {
         if (!isIpLiteral(cleanServer)) {
             outbound.put(
                 "domain_resolver",
-                buildDomainResolver("bootstrap", ipv6Mode)
+                buildDialDomainResolver("bootstrap", ipv6Mode)
             )
         }
         return outbound
@@ -705,16 +705,24 @@ object ConfigGenerator {
             .trim()
     }
 
-    private fun buildDomainResolver(serverTag: String, ipv6Mode: IPv6Mode): JSONObject {
+    private fun buildDialDomainResolver(serverTag: String, ipv6Mode: IPv6Mode): JSONObject {
         return JSONObject()
             .put("server", serverTag)
             .put("strategy", ipv6Mode.domainStrategy())
     }
 
-    private fun JSONObject.putDomainStrategyIfSet(ipv6Mode: IPv6Mode): JSONObject {
-        put("strategy", ipv6Mode.domainStrategy())
+    private fun buildDestinationDomainResolver(serverTag: String): JSONObject {
+        return JSONObject()
+            .put("server", serverTag)
+            .put("strategy", destinationDomainStrategy())
+    }
+
+    private fun JSONObject.putDestinationDomainStrategy(): JSONObject {
+        put("strategy", destinationDomainStrategy())
         return this
     }
+
+    private fun destinationDomainStrategy(): String = "ipv4_only"
 
     private fun buildTlsObject(node: ProxyNode, includeReality: Boolean = false): JSONObject {
         val tls = JSONObject()

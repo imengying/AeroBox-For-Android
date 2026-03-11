@@ -174,6 +174,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 .drop(1)
                 .collect { (isConnected, _) ->
                     if (isConnected) {
+                        connectWatchdogJob?.cancel()
+                        connectWatchdogJob = null
                         scheduleNetworkInfoRefresh(POST_CONNECT_IP_DETECT_DELAY_MS)
                     } else {
                         refreshNetworkInfo()
@@ -201,23 +203,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
-    private suspend fun applyRoutingMode(mode: RoutingMode) {
+    private suspend fun applyRoutingMode(mode: RoutingMode): Boolean {
         val previousMode = routingMode.value
         PreferenceManager.setRoutingMode(appContext, mode)
 
         val currentNode = vpnState.value.currentNode ?: selectedNode.value
         if (!vpnState.value.isConnected || currentNode == null) {
-            return
+            return true
         }
 
-        when (val result = vpnRepository.switchToNode(currentNode)) {
+        return when (val result = vpnRepository.switchToNode(currentNode)) {
             is VpnConnectionResult.Success -> {
                 _uiMessage.tryEmit("已切换为${mode.displayName}")
+                true
             }
 
             is VpnConnectionResult.InvalidConfig -> {
                 PreferenceManager.setRoutingMode(appContext, previousMode)
                 handleConnectionFailure(appContext, result.error)
+                false
             }
 
             is VpnConnectionResult.Failure -> {
@@ -228,10 +232,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     _uiMessage.tryEmit(appContext.getString(com.aerobox.R.string.operation_failed))
                 }
+                false
             }
 
             VpnConnectionResult.NoNodeAvailable -> {
                 PreferenceManager.setRoutingMode(appContext, previousMode)
+                false
             }
         }
     }
@@ -300,10 +306,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun startConnectWatchdog(context: Context) {
         connectWatchdogJob?.cancel()
         connectWatchdogJob = viewModelScope.launch {
-            delay(12_000)
-            if (!vpnState.value.isConnected) {
-                val rawError = VpnStateManager.lastError.value ?: "service start timeout"
-                handleConnectionFailure(context, rawError)
+            val autoReconnectEnabled = PreferenceManager.autoReconnectFlow(appContext).first()
+            if (autoReconnectEnabled) {
+                while (isActive) {
+                    if (vpnState.value.isConnected) {
+                        return@launch
+                    }
+                    val rawError = VpnStateManager.lastError.value?.takeIf { it.isNotBlank() }
+                    if (rawError != null) {
+                        handleConnectionFailure(context, rawError)
+                        return@launch
+                    }
+                    delay(500)
+                }
+            } else {
+                delay(12_000)
+                if (!vpnState.value.isConnected) {
+                    val rawError = VpnStateManager.lastError.value ?: "service start timeout"
+                    handleConnectionFailure(context, rawError)
+                }
             }
         }
     }
@@ -414,9 +435,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val networkNode = vpnState.value.currentNode ?: selectedNode.value
             _detectedIp.value = appContext.getString(com.aerobox.R.string.detecting_ip)
-            _detectedIp.value = fetchPublicIp(networkNode)
+            _detectedIp.value = fetchPublicIp()
         }
     }
 
@@ -428,28 +448,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val fixSuccess = when (fixAction) {
                 ConnectionFixAction.UPDATE_GEO -> GeoAssetManager.updateAll(appContext)
-                ConnectionFixAction.SWITCH_GLOBAL_MODE -> {
-                    applyRoutingMode(RoutingMode.GLOBAL_PROXY)
-                    true
-                }
+                ConnectionFixAction.SWITCH_GLOBAL_MODE -> applyRoutingMode(RoutingMode.GLOBAL_PROXY)
 
                 ConnectionFixAction.REFRESH_SUBSCRIPTIONS -> {
                     val subscriptions = subscriptionRepository.getAllSubscriptions().first()
-                    subscriptionRepository.refreshAllSubscriptions(subscriptions)
-                    true
+                    if (subscriptions.isEmpty()) {
+                        false
+                    } else {
+                        val results = subscriptionRepository.refreshAllSubscriptions(subscriptions)
+                        results.isNotEmpty() && results.all { it.isSuccess }
+                    }
                 }
             }
 
             if (fixSuccess) {
                 _uiMessage.tryEmit(context.getString(com.aerobox.R.string.connection_fix_success))
+                _connectionIssue.value = null
             } else {
                 _uiMessage.tryEmit(context.getString(com.aerobox.R.string.connection_fix_failed))
             }
-            _connectionIssue.value = null
         }
     }
 
-    private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
+    private suspend fun fetchPublicIp(): String = withContext(Dispatchers.IO) {
         val ipv4Endpoints = if (vpnState.value.isConnected) {
             listOf("https://ipv4.icanhazip.com", "https://api4.ipify.org", "https://4.ipw.cn")
         } else {
@@ -506,6 +527,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleConnectionFailure(context: Context, rawError: String) {
+        connectWatchdogJob?.cancel()
+        connectWatchdogJob = null
         val issue = ConnectionDiagnostics.classify(rawError)
         _connectionIssue.value = issue
         _uiMessage.tryEmit("${context.getString(com.aerobox.R.string.operation_failed)}: ${issue.title}")
