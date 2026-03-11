@@ -56,7 +56,8 @@ object ConfigGenerator {
                 enableDoh = enableDoh,
                 routingMode = routingMode,
                 enableGeoCnDomainRule = enableGeoCnDomainRule && hasGeoSiteCn,
-                ipv6Mode = ipv6Mode
+                ipv6Mode = ipv6Mode,
+                nodeIsIpv6Only = isIpv6Literal(node.server)
             )
         )
         config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode))
@@ -153,17 +154,23 @@ object ConfigGenerator {
         enableDoh: Boolean,
         routingMode: RoutingMode,
         enableGeoCnDomainRule: Boolean,
-        ipv6Mode: IPv6Mode
+        ipv6Mode: IPv6Mode,
+        nodeIsIpv6Only: Boolean = false
     ): JSONObject {
+        // When proxy is IPv6-only, remote DNS domain resolution must prefer IPv6
+        // so DoH endpoints resolve to IPv6 addresses reachable through the proxy.
+        val remoteDnsStrategy = if (nodeIsIpv6Only) "prefer_ipv6" else ipv6Mode.domainStrategy()
         val bootstrapServer = buildDnsServer(
             tag = "bootstrap",
             dns = bootstrapDnsAddress(),
+            detour = "direct",
             ipv6Mode = ipv6Mode
         )
 
         val localServer = buildDnsServer(
             tag = "local",
             dns = normalizeLocalDnsAddress(localDns),
+            detour = "direct",
             resolverTag = "bootstrap",
             ipv6Mode = ipv6Mode
         )
@@ -178,10 +185,11 @@ object ConfigGenerator {
 
         val remoteServer = buildDnsServer(
             tag = "remote",
-            dns = normalizeRemoteDnsAddress(remoteDns, enableDoh),
+            dns = normalizeRemoteDnsAddress(remoteDns, enableDoh, nodeIsIpv6Only),
             detour = "proxy",
             resolverTag = "local",
-            ipv6Mode = ipv6Mode
+            ipv6Mode = ipv6Mode,
+            dialStrategyOverride = remoteDnsStrategy
         )
 
         val dns = JSONObject()
@@ -226,7 +234,8 @@ object ConfigGenerator {
         dns: String,
         detour: String? = null,
         resolverTag: String? = null,
-        ipv6Mode: IPv6Mode
+        ipv6Mode: IPv6Mode,
+        dialStrategyOverride: String? = null
     ): JSONObject {
         val spec = parseDnsServer(dns)
         return JSONObject()
@@ -238,18 +247,21 @@ object ConfigGenerator {
                 detour?.let { put("detour", it) }
                 spec.path?.let { put("path", it) }
                 if (!isIpLiteral(spec.server)) {
+                    val strategy = dialStrategyOverride ?: ipv6Mode.domainStrategy()
                     put(
                         "domain_resolver",
-                        buildDialDomainResolver(resolverTag ?: "bootstrap", ipv6Mode)
+                        JSONObject()
+                            .put("server", resolverTag ?: "bootstrap")
+                            .put("strategy", strategy)
                     )
                 }
             }
     }
 
-    private fun normalizeRemoteDnsAddress(remoteDns: String, enableDoh: Boolean): String {
+    private fun normalizeRemoteDnsAddress(remoteDns: String, enableDoh: Boolean, nodeIsIpv6Only: Boolean = false): String {
         val trimmed = remoteDns.trim()
         if (trimmed.isBlank()) {
-            return if (enableDoh) "https://cloudflare-dns.com/dns-query" else "1.1.1.1"
+            return if (enableDoh) "https://cloudflare-dns.com/dns-query" else if (nodeIsIpv6Only) "2606:4700:4700::1111" else "1.1.1.1"
         }
 
         if (enableDoh) {
@@ -277,7 +289,18 @@ object ConfigGenerator {
                 val host = trimmed.removePrefix("quic://")
                 parseHostAndPort(host, 853).first
             }
-            else -> trimmed
+            else -> if (nodeIsIpv6Only) knownIpv6DnsAddress(trimmed) ?: trimmed else trimmed
+        }
+    }
+
+    private fun knownIpv6DnsAddress(ipv4Dns: String): String? {
+        return when (ipv4Dns.removePrefix("[").removeSuffix("]")) {
+            "1.1.1.1", "1.0.0.1" -> "2606:4700:4700::1111"
+            "8.8.8.8", "8.8.4.4" -> "2001:4860:4860::8888"
+            "9.9.9.9" -> "2620:fe::fe"
+            "223.5.5.5", "223.6.6.6" -> "2400:3200::1"
+            "119.29.29.29" -> "2402:4e00::"
+            else -> null
         }
     }
 
@@ -444,8 +467,6 @@ object ConfigGenerator {
             .put("auto_route", true)
             .put("strict_route", true)
             .put("stack", "system")
-            .put("sniff", true)
-            .put("sniff_override_destination", true)
 
         inbounds.put(tunInbound)
 
@@ -457,8 +478,6 @@ object ConfigGenerator {
                     .put("tag", "socks-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2080)
-                    .put("sniff", true)
-                    .put("sniff_override_destination", true)
             )
         }
 
@@ -470,8 +489,6 @@ object ConfigGenerator {
                     .put("tag", "http-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2081)
-                    .put("sniff", true)
-                    .put("sniff_override_destination", true)
             )
         }
 
@@ -711,18 +728,22 @@ object ConfigGenerator {
             .put("strategy", ipv6Mode.domainStrategy())
     }
 
+    private fun isIpv6Literal(server: String): Boolean {
+        val normalized = server.trim().removePrefix("[").removeSuffix("]").substringBefore('%')
+        return normalized.contains(':') &&
+            normalized.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
+    }
+
     private fun buildDestinationDomainResolver(serverTag: String, ipv6Mode: IPv6Mode): JSONObject {
         return JSONObject()
             .put("server", serverTag)
-            .put("strategy", destinationDomainStrategy(ipv6Mode))
+            .put("strategy", "ipv4_only")
     }
 
     private fun JSONObject.putDestinationDomainStrategy(ipv6Mode: IPv6Mode): JSONObject {
-        put("strategy", destinationDomainStrategy(ipv6Mode))
+        put("strategy", "ipv4_only")
         return this
     }
-
-    private fun destinationDomainStrategy(ipv6Mode: IPv6Mode): String = ipv6Mode.domainStrategy()
 
     private fun buildTlsObject(node: ProxyNode, includeReality: Boolean = false): JSONObject {
         val tls = JSONObject()
