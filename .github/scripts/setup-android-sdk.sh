@@ -26,4 +26,8 @@ echo "ANDROID_HOME=${SDK_ROOT}" >> "${GITHUB_ENV}"
 echo "${SDK_ROOT}/cmdline-tools/latest/bin" >> "${GITHUB_PATH}"
 echo "${SDK_ROOT}/platform-tools" >> "${GITHUB_PATH}"
 
-sdkmanager --version
+export ANDROID_SDK_ROOT="${SDK_ROOT}"
+export ANDROID_HOME="${SDK_ROOT}"
+export PATH="${SDK_ROOT}/cmdline-tools/latest/bin:${SDK_ROOT}/platform-tools:${PATH}"
+
+"${SDKMANAGER_BIN}" --version
