@@ -43,7 +43,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         updateInterval: Long
     ) {
         if (!isValidSubscriptionUrl(url)) {
-            _uiMessage.tryEmit("订阅链接无效，请使用 http/https 链接")
+            _uiMessage.tryEmit("订阅链接无效，请使用 HTTPS 链接")
             return
         }
 
@@ -89,7 +89,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         updateInterval: Long
     ) {
         if (!isValidSubscriptionUrl(url)) {
-            _uiMessage.tryEmit("订阅链接无效，请使用 http/https 链接")
+            _uiMessage.tryEmit("订阅链接无效，请使用 HTTPS 链接")
             return
         }
 
@@ -172,7 +172,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         return runCatching {
             val parsed = Uri.parse(url.trim())
             val scheme = parsed.scheme?.lowercase()
-            (scheme == "http" || scheme == "https") && !parsed.host.isNullOrBlank()
+            scheme == "https" && !parsed.host.isNullOrBlank()
         }.getOrDefault(false)
     }
 

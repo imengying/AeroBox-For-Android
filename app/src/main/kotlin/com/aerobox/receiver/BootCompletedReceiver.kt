@@ -28,7 +28,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 if (!autoConnect) return@runCatching
                 if (android.net.VpnService.prepare(context) != null) return@runCatching
 
-                when (val result = VpnRepository(context).connectSelectedNode(refreshDueSubscriptions = true)) {
+                when (val result = VpnRepository(context).connectSelectedNode()) {
                     is VpnConnectionResult.Success -> Unit
                     VpnConnectionResult.NoNodeAvailable -> Unit
                     is VpnConnectionResult.InvalidConfig,
