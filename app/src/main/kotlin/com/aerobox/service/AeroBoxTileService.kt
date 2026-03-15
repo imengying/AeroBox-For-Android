@@ -1,6 +1,7 @@
 package com.aerobox.service
 
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.net.VpnService
@@ -21,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Quick Settings tile to toggle VPN proxy on/off from the status bar.
@@ -29,10 +31,30 @@ class AeroBoxTileService : TileService() {
 
     companion object {
         private const val TAG = "AeroBoxTileService"
+
+        fun requestTileRefresh(context: android.content.Context) {
+            runCatching {
+                requestListeningState(context, ComponentName(context, AeroBoxTileService::class.java))
+            }
+        }
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private enum class PendingAction {
+        START,
+        STOP
+    }
+
+    private enum class VisualState {
+        INACTIVE,
+        CONNECTING,
+        CONNECTED,
+        STOPPING
+    }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tileStateJob: Job? = null
+    private var toggleJob: Job? = null
+    private var pendingAction: PendingAction? = null
 
     override fun onStartListening() {
         super.onStartListening()
@@ -44,9 +66,14 @@ class AeroBoxTileService : TileService() {
             ) { serviceActive, vpnState ->
                 Pair(serviceActive, vpnState)
             }.collect { (serviceActive, vpnState) ->
+                reconcilePendingAction(serviceActive, vpnState)
                 updateTileFromState(serviceActive, vpnState)
             }
         }
+        reconcilePendingAction(
+            serviceActive = VpnStateManager.serviceActive.value,
+            vpnState = VpnStateManager.vpnState.value
+        )
         updateTileFromState(
             serviceActive = VpnStateManager.serviceActive.value,
             vpnState = VpnStateManager.vpnState.value
@@ -61,96 +88,133 @@ class AeroBoxTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-
-        val isServiceActive = AeroBoxVpnService.isServiceActive.value
-
-        if (isServiceActive) {
-            // Stop VPN
-            val intent = Intent(this, AeroBoxVpnService::class.java).apply {
-                action = AeroBoxVpnService.ACTION_STOP
-            }
-            startService(intent)
+        if (isLocked) {
+            unlockAndRun(::handleToggle)
         } else {
-            // Start VPN — need VPN permission first
-            val permissionIntent = VpnService.prepare(this)
-            if (permissionIntent != null) {
-                // Cannot grant VPN permission from TileService directly;
-                // need to start activity to handle permission
-                val launchIntent = Intent(this, com.aerobox.MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    putExtra("action", "toggle_vpn")
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startActivityAndCollapse(
-                        PendingIntent.getActivity(
-                            this, 0, launchIntent,
-                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                        )
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    startActivityAndCollapse(launchIntent)
-                }
-                return
-            }
-            startVpnFromTile()
+            handleToggle()
         }
     }
 
-    private fun startVpnFromTile() {
-        serviceScope.launch {
-            when (val result = VpnRepository(applicationContext).connectSelectedNode()) {
-                VpnConnectionResult.NoNodeAvailable -> {
-                    Log.w(TAG, "No node selected, cannot start VPN from tile")
-                }
+    private fun handleToggle() {
+        val serviceActive = VpnStateManager.serviceActive.value
+        val vpnState = VpnStateManager.vpnState.value
+        val shouldStop = serviceActive || vpnState.isConnected
 
-                is VpnConnectionResult.Success -> {
-                    updateTileFromState(
-                        serviceActive = true,
-                        vpnState = VpnStateManager.vpnState.value.copy(currentNode = result.node)
-                    )
-                }
+        if (shouldStop) {
+            toggleJob?.cancel()
+            pendingAction = PendingAction.STOP
+            updateTileFromState(serviceActive, vpnState)
+            VpnRepository(applicationContext).stopVpn()
+            return
+        }
 
-                is VpnConnectionResult.InvalidConfig -> {
-                    Log.e(
-                        TAG,
-                        ConnectionDiagnostics.logFailureMessage(result, "Config error")
+        val permissionIntent = VpnService.prepare(this)
+        if (permissionIntent != null) {
+            pendingAction = null
+            val launchIntent = Intent(this, com.aerobox.MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("action", "toggle_vpn")
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startActivityAndCollapse(
+                    PendingIntent.getActivity(
+                        this, 0, launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
-                }
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityAndCollapse(launchIntent)
+            }
+            return
+        }
 
-                is VpnConnectionResult.Failure -> {
-                    Log.e(
-                        TAG,
-                        ConnectionDiagnostics.logFailureMessage(result, "Failed to start VPN from tile"),
-                        result.throwable
-                    )
+        pendingAction = PendingAction.START
+        updateTileFromState(serviceActive = false, vpnState = vpnState)
+        toggleJob?.cancel()
+        toggleJob = serviceScope.launch(Dispatchers.IO) {
+            val result = VpnRepository(applicationContext).connectSelectedNode()
+            withContext(Dispatchers.Main.immediate) {
+                when (result) {
+                    VpnConnectionResult.NoNodeAvailable -> {
+                        pendingAction = null
+                        Log.w(TAG, "No node selected, cannot start VPN from tile")
+                        requestTileRefresh(applicationContext)
+                    }
+
+                    is VpnConnectionResult.Success -> {
+                        requestTileRefresh(applicationContext)
+                    }
+
+                    is VpnConnectionResult.InvalidConfig -> {
+                        pendingAction = null
+                        Log.e(
+                            TAG,
+                            ConnectionDiagnostics.logFailureMessage(result, "Config error")
+                        )
+                        requestTileRefresh(applicationContext)
+                    }
+
+                    is VpnConnectionResult.Failure -> {
+                        pendingAction = null
+                        Log.e(
+                            TAG,
+                            ConnectionDiagnostics.logFailureMessage(result, "Failed to start VPN from tile"),
+                            result.throwable
+                        )
+                        requestTileRefresh(applicationContext)
+                    }
                 }
             }
+        }
+    }
+
+    private fun reconcilePendingAction(serviceActive: Boolean, vpnState: VpnState) {
+        pendingAction = when (pendingAction) {
+            PendingAction.START -> when {
+                vpnState.isConnected -> null
+                serviceActive -> PendingAction.START
+                toggleJob?.isActive == true -> PendingAction.START
+                else -> null
+            }
+            PendingAction.STOP -> if (!serviceActive && !vpnState.isConnected) null else PendingAction.STOP
+            null -> null
         }
     }
 
     private fun updateTileFromState(serviceActive: Boolean, vpnState: VpnState) {
-        val active = serviceActive || vpnState.isConnected
-        updateTile(active = active, labelOverride = vpnState.currentNode?.name)
+        val visualState = when {
+            pendingAction == PendingAction.STOP && (serviceActive || vpnState.isConnected) -> VisualState.STOPPING
+            vpnState.isConnected -> VisualState.CONNECTED
+            pendingAction == PendingAction.START || serviceActive -> VisualState.CONNECTING
+            else -> VisualState.INACTIVE
+        }
+        updateTile(visualState = visualState, labelOverride = vpnState.currentNode?.name)
     }
 
-    private fun updateTile(active: Boolean, labelOverride: String? = null) {
+    private fun updateTile(visualState: VisualState, labelOverride: String? = null) {
         val tile = qsTile ?: return
-        tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_aerobox)
-        tile.label = if (active) {
-            labelOverride
-                ?: VpnStateManager.vpnState.value.currentNode
-                    ?.name
-                    ?.takeIf { it.isNotBlank() }
-                ?: getString(R.string.tile_label)
-        } else {
-            getString(R.string.tile_label)
+        tile.state = when (visualState) {
+            VisualState.CONNECTED, VisualState.CONNECTING -> Tile.STATE_ACTIVE
+            VisualState.STOPPING -> Tile.STATE_UNAVAILABLE
+            VisualState.INACTIVE -> Tile.STATE_INACTIVE
         }
-        tile.subtitle = if (active) {
-            getString(R.string.tile_action_open)
-        } else {
-            getString(R.string.tile_action_close)
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_aerobox)
+        tile.label = when (visualState) {
+            VisualState.CONNECTED -> {
+                labelOverride
+                    ?: VpnStateManager.vpnState.value.currentNode
+                        ?.name
+                        ?.takeIf { it.isNotBlank() }
+                    ?: getString(R.string.tile_label)
+            }
+            else -> getString(R.string.tile_label)
+        }
+        tile.subtitle = when (visualState) {
+            VisualState.CONNECTED -> getString(R.string.connected)
+            VisualState.CONNECTING -> getString(R.string.connecting)
+            VisualState.STOPPING -> getString(R.string.tile_status_stopping)
+            VisualState.INACTIVE -> getString(R.string.disconnected)
         }
         tile.updateTile()
     }
@@ -158,6 +222,8 @@ class AeroBoxTileService : TileService() {
     override fun onDestroy() {
         tileStateJob?.cancel()
         tileStateJob = null
+        toggleJob?.cancel()
+        toggleJob = null
         serviceScope.cancel()
         super.onDestroy()
     }

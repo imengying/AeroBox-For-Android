@@ -26,6 +26,8 @@ data class ParsedSubscription(
 )
 
 object SubscriptionParser {
+    private val supportedTransportNetworks = setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade")
+
     private val trafficInfoPrefixes = listOf(
         "剩余流量",
         "流量剩余",
@@ -428,9 +430,12 @@ object SubscriptionParser {
         val json = JSONObject(decoded)
 
         val name = json.optString("ps", "VMess")
-        val server = json.optString("add")
+        val server = json.optString("add").ifBlank { return null }
         val port = json.optString("port").toIntOrNull() ?: return null
-        val network = normalizeNetwork(json.optString("net", "tcp"))
+        val network = resolveTransportNetwork(
+            rawNetwork = json.optString("net", "tcp"),
+            headerType = json.optString("type").ifBlank { null }
+        ) ?: return null
         val rawPath = json.optString("path").ifBlank { null }
 
         return ProxyNode(
@@ -439,6 +444,7 @@ object SubscriptionParser {
             server = server,
             port = port,
             uuid = json.optString("id").ifBlank { null },
+            alterId = json.optString("aid").toIntOrNull() ?: 0,
             security = json.optString("scy", json.optString("security", "auto")),
             network = network,
             tls = json.optString("tls").equals("tls", true),
@@ -447,6 +453,11 @@ object SubscriptionParser {
             transportPath = if (network == "grpc") null else rawPath,
             transportServiceName = json.optString("serviceName", json.optString("service_name", ""))
                 .ifBlank { if (network == "grpc") rawPath else null },
+            alpn = json.optString("alpn").ifBlank { null },
+            fingerprint = firstNonBlank(
+                json.optString("fp").ifBlank { null },
+                json.optString("fingerprint").ifBlank { null }
+            ),
             packetEncoding = firstNonBlank(
                 json.optString("packetEncoding").ifBlank { null },
                 json.optString("packet-encoding").ifBlank { null },
@@ -465,7 +476,9 @@ object SubscriptionParser {
         val server = parsed.host ?: return null
         val port = parsed.port.takeIf { it > 0 } ?: return null
         val params = parseUriParams(parsed.query)
-        val network = normalizeNetwork(params["type"] ?: params["network"])
+        val rawNetwork = firstNonBlank(params["type"], params["network"])
+        val network = resolveTransportNetwork(rawNetwork)
+        if (rawNetwork != null && network == null) return null
 
         return ProxyNode(
             name = decodeName(parsed.fragment ?: "VLESS"),
@@ -510,7 +523,9 @@ object SubscriptionParser {
         val server = parsed.host ?: return null
         val port = parsed.port.takeIf { it > 0 } ?: return null
         val params = parseUriParams(parsed.query)
-        val network = normalizeNetwork(params["type"] ?: params["network"])
+        val rawNetwork = firstNonBlank(params["type"], params["network"])
+        val network = resolveTransportNetwork(rawNetwork)
+        if (rawNetwork != null && network == null) return null
 
         return ProxyNode(
             name = decodeName(parsed.fragment ?: "Trojan"),
@@ -532,6 +547,8 @@ object SubscriptionParser {
                 params["service_name"],
                 if (network == "grpc") params["path"] else null
             ),
+            alpn = params["alpn"],
+            fingerprint = firstNonBlank(params["fp"], params["fingerprint"]),
             packetEncoding = firstNonBlank(
                 params["packetEncoding"],
                 params["packet-encoding"],
@@ -661,11 +678,19 @@ object SubscriptionParser {
             val server = obj.optString("server", obj.optString("address", ""))
             val port = obj.optInt("server_port", obj.optInt("port", -1))
             if (server.isBlank() || port <= 0) continue
-            val network = normalizeNetwork(
-                obj.optString("network", obj.optString("net", "")).ifBlank {
-                    transport?.optString("type", "")?.ifBlank { null }
-                }
+            val rawNetwork = firstNonBlank(
+                obj.optString("network", "").ifBlank { null },
+                obj.optString("net", "").ifBlank { null },
+                transport?.optString("type", "")?.ifBlank { null }
             )
+            val network = resolveTransportNetwork(
+                rawNetwork = rawNetwork,
+                headerType = firstNonBlank(
+                    obj.optString("headerType", "").ifBlank { null },
+                    obj.optString("header_type", "").ifBlank { null }
+                )
+            )
+            if (rawNetwork != null && network == null) continue
 
             result += ProxyNode(
                 name = obj.optString("name", obj.optString("ps", type.name)),
@@ -673,6 +698,11 @@ object SubscriptionParser {
                 server = server,
                 port = port,
                 uuid = obj.optString("uuid", obj.optString("id", "")).ifBlank { null },
+                alterId = parseIntField(
+                    obj.optString("alter_id", "").ifBlank { null },
+                    obj.optString("alterId", "").ifBlank { null },
+                    obj.optString("aid", "").ifBlank { null }
+                ) ?: 0,
                 password = obj.optString("password", "").ifBlank { null },
                 method = obj.optString("method", "").ifBlank { null },
                 flow = obj.optString("flow", "").ifBlank { null },
@@ -805,6 +835,20 @@ object SubscriptionParser {
         }
     }
 
+    private fun resolveTransportNetwork(
+        rawNetwork: String?,
+        headerType: String? = null
+    ): String? {
+        val normalizedNetwork = normalizeNetwork(rawNetwork) ?: return null
+        val normalizedHeaderType = headerType?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+        val resolved = if (normalizedNetwork == "tcp" && normalizedHeaderType == "http") {
+            "http"
+        } else {
+            normalizedNetwork
+        }
+        return resolved.takeIf { it in supportedTransportNetworks }
+    }
+
     private fun parseServerPort(raw: String): Pair<String, Int>? {
         val value = raw.trim()
         if (value.isBlank()) return null
@@ -838,13 +882,35 @@ object SubscriptionParser {
     }
 
     private fun tryBase64Decode(value: String): String {
-        return runCatching {
-            val sanitized = value.trim().replace("\n", "")
-            val padding = (4 - sanitized.length % 4) % 4
-            val adjusted = sanitized + "=".repeat(padding)
-            val decoded = Base64.decode(adjusted, Base64.DEFAULT)
-            String(decoded, StandardCharsets.UTF_8).trim()
-        }.getOrDefault(value)
+        val sanitized = value.trim().replace("\n", "").replace("\r", "")
+        if (sanitized.isBlank()) return value
+
+        val candidates = buildList {
+            add(sanitized)
+            add(sanitized.trimEnd('='))
+            add(sanitized.replace('-', '+').replace('_', '/'))
+            add(sanitized.trimEnd('=').replace('-', '+').replace('_', '/'))
+        }.distinct()
+
+        val flags = listOf(
+            Base64.DEFAULT,
+            Base64.NO_WRAP,
+            Base64.NO_WRAP or Base64.URL_SAFE,
+            Base64.URL_SAFE
+        )
+
+        candidates.forEach { candidate ->
+            if (candidate.isBlank()) return@forEach
+            val padding = (4 - candidate.length % 4) % 4
+            val adjusted = candidate + "=".repeat(padding)
+            flags.forEach { flag ->
+                runCatching {
+                    String(Base64.decode(adjusted, flag), StandardCharsets.UTF_8).trim()
+                }.getOrNull()?.let { return it }
+            }
+        }
+
+        return value
     }
 
     private fun decodeName(value: String): String {
@@ -863,6 +929,10 @@ object SubscriptionParser {
         return values.any { v ->
             v != null && (v == "1" || v.equals("true", true))
         }
+    }
+
+    private fun parseIntField(vararg values: String?): Int? {
+        return values.firstNotNullOfOrNull { it?.trim()?.toIntOrNull() }
     }
 
     private fun hasUnsupportedShadowsocksFeature(vararg values: String?): Boolean {

@@ -661,7 +661,7 @@ object ConfigGenerator {
                 outbound.put("type", "vmess")
                 node.uuid?.takeIf { it.isNotBlank() }?.let { outbound.put("uuid", it) }
                 outbound.put("security", node.security ?: "auto")
-                outbound.put("alter_id", 0)
+                outbound.put("alter_id", node.alterId)
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node))
             }

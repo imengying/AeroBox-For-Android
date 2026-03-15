@@ -41,6 +41,7 @@ data class ProxyNode(
     val server: String,
     val port: Int,
     val uuid: String? = null,
+    val alterId: Int = 0,
     val password: String? = null,
     val method: String? = null,
     val flow: String? = null,

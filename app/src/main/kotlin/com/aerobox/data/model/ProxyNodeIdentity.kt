@@ -30,6 +30,7 @@ fun ProxyNode.connectionFingerprint(includeName: Boolean = true): String {
         add(server.normalizedServerValue())
         add(port.toString())
         add(uuid.normalizedIdentityValue())
+        add(alterId.toString())
         add(password.normalizedIdentityValue())
         add(method.normalizedIdentityValue())
         add(flow.normalizedIdentityValue())

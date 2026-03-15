@@ -9,6 +9,7 @@ import org.yaml.snakeyaml.Yaml
  * Only reads the `proxies:` list and maps each node into the app's internal model.
  */
 object ClashParser {
+    private val supportedTransportNetworks = setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade")
 
     fun parseClashYaml(content: String): List<ProxyNode> {
         val root = loadYamlRoot(content) ?: return emptyList()
@@ -85,7 +86,8 @@ object ClashParser {
             hasValue(map, "http-upgrade-path") || hasValue(map, "http-upgrade-host") -> "httpupgrade"
             else -> null
         }
-        val normalizedNetwork = normalizeNetwork(network)
+        val normalizedNetwork = resolveTransportNetwork(network)
+        if (network != null && normalizedNetwork == null) return null
         val transportPath = firstNonBlank(
             stringValue(map, "ws-opts", "path"),
             stringValue(map, "ws-path"),
@@ -146,6 +148,7 @@ object ClashParser {
             server = server,
             port = port,
             uuid = firstNonBlank(stringValue(map, "uuid"), stringValue(map, "id")),
+            alterId = intValue(map, "alterId") ?: intValue(map, "alter_id") ?: intValue(map, "aid") ?: 0,
             password = firstNonBlank(
                 stringValue(map, "password"),
                 stringValue(map, "passwd"),
@@ -246,6 +249,11 @@ object ClashParser {
             "http-upgrade" -> "httpupgrade"
             else -> normalized
         }
+    }
+
+    private fun resolveTransportNetwork(rawNetwork: String?): String? {
+        val normalized = normalizeNetwork(rawNetwork) ?: return null
+        return normalized.takeIf { it in supportedTransportNetworks }
     }
 
     private fun firstNonBlank(vararg values: String?): String? {
