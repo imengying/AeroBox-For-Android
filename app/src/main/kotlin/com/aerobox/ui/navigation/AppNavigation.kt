@@ -92,19 +92,19 @@ fun AppNavigation() {
             ) {
                 MainScreen(
                     onNavigateToSubscriptions = {
-                        navController.navigate("subscriptions")
+                        navController.navigate("subscriptions") { launchSingleTop = true }
                     },
                     onNavigateToPerAppProxy = {
-                        navController.navigate("per_app_proxy")
+                        navController.navigate("per_app_proxy") { launchSingleTop = true }
                     },
                     onNavigateToRouting = {
-                        navController.navigate("routing")
+                        navController.navigate("routing") { launchSingleTop = true }
                     },
                     onNavigateToLog = {
-                        navController.navigate("log")
+                        navController.navigate("log") { launchSingleTop = true }
                     },
                     onNavigateToLicense = {
-                        navController.navigate("license")
+                        navController.navigate("license") { launchSingleTop = true }
                     }
                 )
             }

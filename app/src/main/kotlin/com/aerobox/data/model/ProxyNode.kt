@@ -1,6 +1,8 @@
 package com.aerobox.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.Locale
 
@@ -33,7 +35,10 @@ object NodeLatencyState {
     const val FAILED = -3
 }
 
-@Entity(tableName = "proxy_nodes")
+@Entity(
+    tableName = "proxy_nodes",
+    indices = [Index(value = ["subscriptionId"])]
+)
 data class ProxyNode(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,

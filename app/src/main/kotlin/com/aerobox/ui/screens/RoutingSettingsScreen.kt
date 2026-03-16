@@ -48,7 +48,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun RoutingSettingsScreen(
     onNavigateBack: () -> Unit,
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel = viewModel(
+        viewModelStoreOwner = LocalContext.current as androidx.activity.ComponentActivity
+    )
 ) {
     val enableGeoRules by viewModel.enableGeoRules.collectAsStateWithLifecycle()
     val enableGeoCnDomainRule by viewModel.enableGeoCnDomainRule.collectAsStateWithLifecycle()

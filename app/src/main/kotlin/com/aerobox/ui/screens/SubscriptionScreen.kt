@@ -95,8 +95,9 @@ fun SubscriptionScreen(
     var orderedSubscriptions by remember { mutableStateOf(subscriptions) }
     var draggingSubscriptionId by remember { mutableStateOf<Long?>(null) }
     var draggingOffsetY by remember { mutableFloatStateOf(0f) }
-    val refreshRotation by rememberInfiniteTransition(label = "subscription_refresh")
-        .animateFloat(
+    val refreshRotation = if (isLoading) {
+        val transition = rememberInfiniteTransition(label = "subscription_refresh")
+        val rotation by transition.animateFloat(
             initialValue = 0f,
             targetValue = 360f,
             animationSpec = infiniteRepeatable(
@@ -105,6 +106,10 @@ fun SubscriptionScreen(
             ),
             label = "subscription_refresh_rotation"
         )
+        rotation
+    } else {
+        0f
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.uiMessage.collectLatest { message ->
@@ -137,7 +142,7 @@ fun SubscriptionScreen(
                             Icons.Filled.Refresh,
                             contentDescription = stringResource(R.string.refresh),
                             modifier = Modifier.graphicsLayer {
-                                rotationZ = if (isLoading) refreshRotation else 0f
+                                rotationZ = refreshRotation
                             }
                         )
                     }
@@ -473,7 +478,6 @@ private fun formatSubscriptionDate(timestampMs: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestampMs))
 }
 
-@Composable
 private fun buildRelativeTimeText(timestampMs: Long): String {
     if (timestampMs <= 0L) return "从未更新"
     val diff = System.currentTimeMillis() - timestampMs

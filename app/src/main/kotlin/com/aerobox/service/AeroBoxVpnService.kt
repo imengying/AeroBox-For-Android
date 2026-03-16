@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.InetAddress
 
 /**
@@ -65,7 +67,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val configResolver by lazy(LazyThreadSafetyMode.NONE) {
+    private val startMutex = Mutex()
+    private val configResolver by lazy {
         VpnConfigResolver(applicationContext)
     }
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -76,6 +79,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
+    private companion object {
+        const val MAX_RECONNECT_ATTEMPTS = 10
+    }
     private var cachedConnectedNode: ProxyNode? = null
 
     private data class StartRequest(
@@ -127,7 +133,8 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private fun startVpn(providedConfig: String? = null, requestedNodeId: Long? = null) {
         VpnStateManager.updateServiceActive(true)
         serviceScope.launch {
-            runCatching {
+            startMutex.withLock {
+                runCatching {
                 RuntimeLogBuffer.append("info", "Starting sing-box service")
                 startForeground(
                     NOTIFICATION_ID,
@@ -177,6 +184,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 VpnStateManager.updateLastError(e.message ?: e.toString())
                 stopService("Stopping service after start failure")
             }
+            } // startMutex.withLock
         }
     }
 
@@ -273,8 +281,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             if (userRequestedStop) "Service stopped" else "Service stopped unexpectedly"
         )
         // Called by libbox when the service stops (may be unexpected)
-        vpnInterface?.close()
-        vpnInterface = null
         VpnStateManager.updateServiceActive(false)
         VpnStateManager.updateConnectionState(false, null)
 
@@ -688,6 +694,11 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             }
 
             reconnectAttempts++
+            if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+                RuntimeLogBuffer.append("warn", "Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached, giving up")
+                stopService("Stopping service: max reconnect attempts reached")
+                return@launch
+            }
             val backoffMs = 1000L * (1L shl (reconnectAttempts - 1).coerceAtMost(5))
             Log.i(TAG, "Auto-reconnect attempt $reconnectAttempts in ${backoffMs}ms")
             RuntimeLogBuffer.append(

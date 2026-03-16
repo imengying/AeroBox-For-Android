@@ -143,8 +143,16 @@ object GeoAssetManager {
                 }
 
                 if (tmpFile.exists() && tmpFile.length() > 0) {
-                    target.delete()
-                    tmpFile.renameTo(target)
+                    if (tmpFile.renameTo(target)) {
+                        true
+                    } else {
+                        // renameTo can fail across filesystems; fall back to copy
+                        tmpFile.inputStream().use { input ->
+                            FileOutputStream(target).use { output -> input.copyTo(output) }
+                        }
+                        tmpFile.delete()
+                        target.exists() && target.length() > 0
+                    }
                 } else {
                     tmpFile.delete()
                     false

@@ -88,7 +88,9 @@ private fun buildHighlightedText(
 @Composable
 fun PerAppProxyScreen(
     onNavigateBack: () -> Unit,
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel = viewModel(
+        viewModelStoreOwner = LocalContext.current as androidx.activity.ComponentActivity
+    )
 ) {
     val context = LocalContext.current
     val packageManager = context.packageManager
@@ -106,21 +108,23 @@ fun PerAppProxyScreen(
         viewModel.loadInstalledApps()
     }
 
-    val filteredApps = apps
-        .asSequence()
-        .filter { if (showSystem) true else !it.isSystem }
-        .filter { if (showNonInternet) true else it.hasInternetPermission }
-        .filter { if (showSelectedOnly) selectedPackages.contains(it.packageName) else true }
-        .filter { app ->
-            val query = searchQuery.trim()
-            if (query.isBlank()) {
-                true
-            } else {
-                app.label.contains(query, ignoreCase = true) ||
-                    app.packageName.contains(query, ignoreCase = true)
+    val filteredApps = remember(apps, showSystem, showNonInternet, showSelectedOnly, searchQuery, selectedPackages) {
+        apps
+            .asSequence()
+            .filter { if (showSystem) true else !it.isSystem }
+            .filter { if (showNonInternet) true else it.hasInternetPermission }
+            .filter { if (showSelectedOnly) selectedPackages.contains(it.packageName) else true }
+            .filter { app ->
+                val query = searchQuery.trim()
+                if (query.isBlank()) {
+                    true
+                } else {
+                    app.label.contains(query, ignoreCase = true) ||
+                        app.packageName.contains(query, ignoreCase = true)
+                }
             }
-        }
-        .toList()
+            .toList()
+    }
 
     Scaffold(
         topBar = {

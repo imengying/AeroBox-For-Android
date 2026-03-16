@@ -13,7 +13,7 @@ interface SubscriptionDao {
     @Query("SELECT * FROM subscriptions ORDER BY createdAt DESC")
     fun getAllSubscriptions(): Flow<List<Subscription>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(subscription: Subscription): Long
 
     @Update

@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 
 class VpnConfigResolver(private val context: Context) {
     private val nodeDao = AeroBoxApplication.database.proxyNodeDao()
-    private val subscriptionRepository by lazy(LazyThreadSafetyMode.NONE) {
+    private val subscriptionRepository by lazy {
         SubscriptionRepository(context)
     }
 
@@ -61,19 +61,8 @@ class VpnConfigResolver(private val context: Context) {
             GeoAssetManager.ensureBundledAssets(context)
         }
 
-        val routingMode = PreferenceManager.routingModeFlow(context).first()
-        val remoteDns = PreferenceManager.remoteDnsFlow(context).first()
-        val localDns = PreferenceManager.localDnsFlow(context).first()
-        val enableDoh = PreferenceManager.enableDohFlow(context).first()
-        val enableSocksInbound = PreferenceManager.enableSocksInboundFlow(context).first()
-        val enableHttpInbound = PreferenceManager.enableHttpInboundFlow(context).first()
-        val ipv6Mode = PreferenceManager.ipv6ModeFlow(context).first()
-        val enableGeoRules = PreferenceManager.enableGeoRulesFlow(context).first()
-        val enableGeoCnDomainRule = PreferenceManager.enableGeoCnDomainRuleFlow(context).first()
-        val enableGeoCnIpRule = PreferenceManager.enableGeoCnIpRuleFlow(context).first()
-        val enableGeoAdsBlock = PreferenceManager.enableGeoAdsBlockFlow(context).first()
-        val enableGeoBlockQuic = PreferenceManager.enableGeoBlockQuicFlow(context).first()
-        val geoIpCnRuleSetPath = if (enableGeoRules) {
+        val prefs = PreferenceManager.readVpnConfigPreferences(context)
+        val geoIpCnRuleSetPath = if (prefs.enableGeoRules) {
             GeoAssetManager
                 .getGeoIpFile(context)
                 .takeIf { it.exists() && it.length() > 0L }
@@ -81,7 +70,7 @@ class VpnConfigResolver(private val context: Context) {
         } else {
             null
         }
-        val geoSiteCnRuleSetPath = if (enableGeoRules) {
+        val geoSiteCnRuleSetPath = if (prefs.enableGeoRules) {
             GeoAssetManager
                 .getGeoSiteFile(context)
                 .takeIf { it.exists() && it.length() > 0L }
@@ -89,7 +78,7 @@ class VpnConfigResolver(private val context: Context) {
         } else {
             null
         }
-        val geoSiteAdsRuleSetPath = if (enableGeoRules) {
+        val geoSiteAdsRuleSetPath = if (prefs.enableGeoRules) {
             GeoAssetManager
                 .getGeoAdsFile(context)
                 .takeIf { it.exists() && it.length() > 0L }
@@ -100,17 +89,17 @@ class VpnConfigResolver(private val context: Context) {
 
         return ConfigGenerator.generateSingBoxConfig(
             node = node,
-            routingMode = routingMode,
-            remoteDns = remoteDns,
-            localDns = localDns,
-            enableDoh = enableDoh,
-            enableSocksInbound = enableSocksInbound,
-            enableHttpInbound = enableHttpInbound,
-            ipv6Mode = ipv6Mode,
-            enableGeoCnDomainRule = enableGeoRules && enableGeoCnDomainRule,
-            enableGeoCnIpRule = enableGeoRules && enableGeoCnIpRule,
-            enableGeoAdsBlock = enableGeoRules && enableGeoAdsBlock,
-            enableGeoBlockQuic = enableGeoRules && enableGeoBlockQuic,
+            routingMode = prefs.routingMode,
+            remoteDns = prefs.remoteDns,
+            localDns = prefs.localDns,
+            enableDoh = prefs.enableDoh,
+            enableSocksInbound = prefs.enableSocksInbound,
+            enableHttpInbound = prefs.enableHttpInbound,
+            ipv6Mode = prefs.ipv6Mode,
+            enableGeoCnDomainRule = prefs.enableGeoRules && prefs.enableGeoCnDomainRule,
+            enableGeoCnIpRule = prefs.enableGeoRules && prefs.enableGeoCnIpRule,
+            enableGeoAdsBlock = prefs.enableGeoRules && prefs.enableGeoAdsBlock,
+            enableGeoBlockQuic = prefs.enableGeoRules && prefs.enableGeoBlockQuic,
             geoIpCnRuleSetPath = geoIpCnRuleSetPath,
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath

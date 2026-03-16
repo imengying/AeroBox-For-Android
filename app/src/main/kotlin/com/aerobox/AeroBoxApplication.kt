@@ -29,9 +29,9 @@ class AeroBoxApplication : Application() {
         createNotificationChannel()
         SingBoxNative.setup(this)
 
-        Thread {
-            GeoAssetManager.ensureBundledAssets(this)
-        }.start()
+        applicationScope.launch(Dispatchers.IO) {
+            GeoAssetManager.ensureBundledAssets(this@AeroBoxApplication)
+        }
 
         applicationScope.launch {
             SubscriptionUpdateScheduler.reconfigure(this@AeroBoxApplication)
@@ -64,6 +64,7 @@ class AeroBoxApplication : Application() {
                 AppDatabase::class.java,
                 "aerobox.db"
             )
+                .fallbackToDestructiveMigration()
                 .build()
         }
     }

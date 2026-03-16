@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.RoutingMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -202,5 +203,55 @@ object PreferenceManager {
 
     suspend fun setEnableGeoBlockQuic(context: Context, enabled: Boolean) {
         context.dataStore.edit { it[ENABLE_GEO_BLOCK_QUIC] = enabled }
+    }
+
+    /**
+     * Read all VPN config preferences in a single atomic snapshot.
+     */
+    data class VpnConfigPreferences(
+        val routingMode: RoutingMode,
+        val remoteDns: String,
+        val localDns: String,
+        val enableDoh: Boolean,
+        val enableSocksInbound: Boolean,
+        val enableHttpInbound: Boolean,
+        val ipv6Mode: IPv6Mode,
+        val enableGeoRules: Boolean,
+        val enableGeoCnDomainRule: Boolean,
+        val enableGeoCnIpRule: Boolean,
+        val enableGeoAdsBlock: Boolean,
+        val enableGeoBlockQuic: Boolean
+    )
+
+    suspend fun readVpnConfigPreferences(context: Context): VpnConfigPreferences {
+        val prefs = context.dataStore.data.first()
+        val routingMode = runCatching { RoutingMode.valueOf(prefs[ROUTING_MODE] ?: "") }
+            .getOrDefault(RoutingMode.GLOBAL_PROXY)
+        val ipv6Mode = run {
+            val stored = prefs[IPV6_MODE]
+            if (!stored.isNullOrBlank()) {
+                when (stored) {
+                    "DISABLE" -> IPv6Mode.DISABLE
+                    "ENABLE", "PREFER", "ONLY", "PREFER_IPV6" -> IPv6Mode.ENABLE
+                    else -> IPv6Mode.DISABLE
+                }
+            } else {
+                if (prefs[ENABLE_IPV6] ?: false) IPv6Mode.ENABLE else IPv6Mode.DISABLE
+            }
+        }
+        return VpnConfigPreferences(
+            routingMode = routingMode,
+            remoteDns = prefs[REMOTE_DNS] ?: "1.1.1.1",
+            localDns = prefs[LOCAL_DNS] ?: "223.5.5.5",
+            enableDoh = prefs[ENABLE_DOH] ?: true,
+            enableSocksInbound = prefs[ENABLE_SOCKS_INBOUND] ?: false,
+            enableHttpInbound = prefs[ENABLE_HTTP_INBOUND] ?: false,
+            ipv6Mode = ipv6Mode,
+            enableGeoRules = prefs[ENABLE_GEO_RULES] ?: false,
+            enableGeoCnDomainRule = prefs[ENABLE_GEO_CN_DOMAIN_RULE] ?: false,
+            enableGeoCnIpRule = prefs[ENABLE_GEO_CN_IP_RULE] ?: false,
+            enableGeoAdsBlock = prefs[ENABLE_GEO_ADS_BLOCK] ?: false,
+            enableGeoBlockQuic = prefs[ENABLE_GEO_BLOCK_QUIC] ?: false
+        )
     }
 }

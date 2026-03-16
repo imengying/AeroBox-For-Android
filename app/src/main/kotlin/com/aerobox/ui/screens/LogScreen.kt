@@ -24,28 +24,36 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.logging.RuntimeLogEntry
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
     onNavigateBack: () -> Unit
 ) {
-    val logLines by RuntimeLogBuffer.lines.collectAsState()
+    val logLines by RuntimeLogBuffer.lines.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom when new entries arrive
+    // Auto-scroll to bottom only when user is already near the bottom
     LaunchedEffect(logLines.size) {
         if (logLines.isNotEmpty()) {
-            listState.animateScrollToItem(logLines.size - 1)
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val isNearBottom = lastVisibleItem >= logLines.size - 3
+            if (isNearBottom) {
+                listState.animateScrollToItem(logLines.size - 1)
+            }
         }
     }
 
@@ -107,8 +115,8 @@ private fun LogEntryRow(entry: RuntimeLogEntry) {
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-        .format(java.util.Date(entry.timestamp))
+    val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val time = remember(entry.timestamp) { timeFormat.format(Date(entry.timestamp)) }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),

@@ -38,10 +38,20 @@ class SubscriptionRepository(context: Context) {
     private val subscriptionDao = database.subscriptionDao()
     private val proxyNodeDao = database.proxyNodeDao()
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    companion object {
+        private const val NODE_MATCH_THRESHOLD = 50
+        private const val SUBSCRIPTION_USER_AGENT = "clash-verge/v1.3.8"
+        const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
+        const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
+        const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"
+
+        internal val sharedClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
+        }
+    }
 
     private data class SubscriptionFetchResult(
         val content: String,
@@ -167,8 +177,12 @@ class SubscriptionRepository(context: Context) {
     }
 
     suspend fun refreshAllSubscriptions(subscriptions: List<Subscription>): List<Result<SubscriptionUpdateResult>> {
-        val results = subscriptions.map { subscription ->
-            runCatching { updateSubscriptionInternal(subscription) }
+        val results = kotlinx.coroutines.coroutineScope {
+            subscriptions.map { subscription ->
+                kotlinx.coroutines.async {
+                    runCatching { updateSubscriptionInternal(subscription) }
+                }
+            }.map { it.await() }
         }
         if (results.any { it.isSuccess }) {
             SubscriptionUpdateScheduler.reconfigure(appContext)
@@ -238,7 +252,7 @@ class SubscriptionRepository(context: Context) {
                 .header("Accept-Encoding", "identity")
                 .header("Connection", "keep-alive")
                 .build()
-            val call = client.newCall(request)
+            val call = sharedClient.newCall(request)
             cont.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onResponse(call: Call, response: Response) {
@@ -280,7 +294,7 @@ class SubscriptionRepository(context: Context) {
         )
         val summary = calculateUpdateSummary(existingNodes, stabilizedNodes)
 
-        database.withTransaction {
+        val persistedNodes = database.withTransaction {
             proxyNodeDao.deleteBySubscription(subscription.id)
             proxyNodeDao.insertAll(stabilizedNodes)
             subscriptionDao.update(
@@ -292,8 +306,8 @@ class SubscriptionRepository(context: Context) {
                     expireTimestamp = prepared.expireTimestamp
                 )
             )
+            proxyNodeDao.getNodesBySubscription(subscription.id)
         }
-        val persistedNodes = proxyNodeDao.getNodesBySubscription(subscription.id)
 
         maybeUpdateSelectedNode(
             selectedNodeId = selectedNodeId,
@@ -468,11 +482,4 @@ class SubscriptionRepository(context: Context) {
         return interval.coerceAtLeast(MIN_UPDATE_INTERVAL_MS)
     }
 
-    companion object {
-        private const val NODE_MATCH_THRESHOLD = 50
-        private const val SUBSCRIPTION_USER_AGENT = "clash-verge/v1.3.8"
-        const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
-        const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
-        const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"
-    }
 }

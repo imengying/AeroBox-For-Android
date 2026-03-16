@@ -623,6 +623,25 @@ object ConfigGenerator {
                 )
             .put(
                 JSONObject()
+                    .put(
+                        "ip_cidr",
+                        JSONArray()
+                            .put("127.0.0.0/8")
+                            .put("10.0.0.0/8")
+                            .put("172.16.0.0/12")
+                            .put("192.168.0.0/16")
+                            .put("169.254.0.0/16")
+                            .put("100.64.0.0/10")
+                            .put("198.18.0.0/15")
+                            .put("::1/128")
+                            .put("fc00::/7")
+                            .put("fe80::/10")
+                    )
+                    .put("action", "route")
+                    .put("outbound", "direct")
+            )
+            .put(
+                JSONObject()
                     .put("ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
                     .put("source_ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))
                     .put("action", "reject")

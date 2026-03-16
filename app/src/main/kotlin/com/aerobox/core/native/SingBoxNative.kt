@@ -15,6 +15,7 @@ import io.nekohasekai.libbox.SetupOptions
 object SingBoxNative {
 
     private const val TAG = "SingBoxNative"
+    @Volatile
     private var initialized = false
 
     data class OutboundTrafficStats(

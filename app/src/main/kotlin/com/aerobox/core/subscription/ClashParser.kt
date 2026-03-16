@@ -2,7 +2,9 @@ package com.aerobox.core.subscription
 
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.ProxyType
+import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
+import org.yaml.snakeyaml.constructor.SafeConstructor
 
 /**
  * Clash/Clash Meta YAML parser.
@@ -30,7 +32,13 @@ object ClashParser {
 
 
     private fun loadYamlRoot(content: String): Any? {
-        return runCatching { Yaml().load<Any?>(content) }.getOrNull()
+        return runCatching {
+            val options = LoaderOptions().apply {
+                maxAliasesForCollections = 50
+                codePointLimit = 8 * 1024 * 1024 // 8 MB limit
+            }
+            Yaml(SafeConstructor(options)).load<Any?>(content)
+        }.getOrNull()
     }
 
     private fun parseProxyItem(map: Map<*, *>?): ProxyNode? {

@@ -23,7 +23,7 @@ sealed interface VpnConnectionResult {
 
 class VpnRepository(private val context: Context) {
     private val configResolver = VpnConfigResolver(context)
-    private val subscriptionRepository by lazy(LazyThreadSafetyMode.NONE) {
+    private val subscriptionRepository by lazy {
         SubscriptionRepository(context)
     }
 
@@ -108,7 +108,7 @@ class VpnRepository(private val context: Context) {
         val intent = Intent(context, AeroBoxVpnService::class.java).apply {
             action = AeroBoxVpnService.ACTION_STOP
         }
-        context.startService(intent)
+        ContextCompat.startForegroundService(context, intent)
     }
 
     suspend fun urlTestNode(

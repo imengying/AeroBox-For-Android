@@ -18,7 +18,7 @@ interface ProxyNodeDao {
     @Query("SELECT * FROM proxy_nodes WHERE id = :id LIMIT 1")
     suspend fun getNodeById(id: Long): ProxyNode?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(nodes: List<ProxyNode>)
 
     @Query("UPDATE proxy_nodes SET latency = :latency WHERE id = :id")

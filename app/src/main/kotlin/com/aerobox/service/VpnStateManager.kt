@@ -18,7 +18,7 @@ object VpnStateManager {
 
     fun updateServiceActive(active: Boolean) {
         _serviceActive.value = active
-        AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance)
+        runCatching { AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance) }
     }
 
     fun updateConnectionState(isConnected: Boolean, node: ProxyNode?) {
@@ -32,7 +32,7 @@ object VpnStateManager {
         if (isConnected) {
             _lastError.value = null
         }
-        AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance)
+        runCatching { AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance) }
     }
 
     fun updateCurrentNode(node: ProxyNode?) {
@@ -40,7 +40,7 @@ object VpnStateManager {
             if (!current.isConnected) current
             else current.copy(currentNode = node)
         }
-        AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance)
+        runCatching { AeroBoxTileService.requestTileRefresh(AeroBoxApplication.appInstance) }
     }
 
     fun updateLastError(error: String?) {

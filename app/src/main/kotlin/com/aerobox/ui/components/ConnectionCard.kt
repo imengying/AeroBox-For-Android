@@ -45,21 +45,22 @@ fun ConnectionCard(
 ) {
     val isActive = isConnected || isConnecting
 
-    // Pulse animation when connected / connecting
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = when {
-            isConnected -> 1.06f
-            isConnecting -> 1.03f
-            else -> 1f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_scale"
-    )
+    // Pulse animation only when connected / connecting to save CPU
+    val pulseScale = if (isActive) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = if (isConnected) 1.06f else 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1500),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulse_scale"
+        )
+        scale
+    } else {
+        1f
+    }
 
     val buttonColor by animateColorAsState(
         targetValue = when {

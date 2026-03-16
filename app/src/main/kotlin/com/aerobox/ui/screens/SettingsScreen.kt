@@ -60,7 +60,9 @@ fun SettingsScreen(
     onNavigateToRouting: () -> Unit = {},
     onNavigateToLog: () -> Unit = {},
     onNavigateToLicense: () -> Unit = {},
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel = viewModel(
+        viewModelStoreOwner = LocalContext.current as androidx.activity.ComponentActivity
+    )
 ) {
     val context = LocalContext.current
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()

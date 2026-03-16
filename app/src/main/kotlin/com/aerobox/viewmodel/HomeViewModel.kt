@@ -68,6 +68,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         const val NODE_TEST_CONCURRENCY = 10
         val IPV4_REGEX = Regex("""^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$""")
         val IPV6_REGEX = Regex("""^[0-9A-Fa-f:]+(%[0-9A-Za-z._~-]+)?$""")
+        val ipCheckClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .callTimeout(5, TimeUnit.SECONDS)
+                .connectTimeout(3, TimeUnit.SECONDS)
+                .readTimeout(3, TimeUnit.SECONDS)
+                // Zero idle connections to ensure fresh sockets per detection,
+                // avoiding stale connections from before VPN routing changed.
+                .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+                .retryOnConnectionFailure(false)
+                .build()
+        }
     }
 
     private data class UrlTestSettings(
@@ -474,7 +485,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _detectedIp.value = appContext.getString(com.aerobox.R.string.detecting_ip)
-            _detectedIp.value = fetchPublicIp()
+            _detectedIp.value = fetchPublicIp(vpnState.value.currentNode ?: selectedNode.value)
         }
     }
 
@@ -508,62 +519,76 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun fetchPublicIp(): String = withContext(Dispatchers.IO) {
-        val client = OkHttpClient.Builder()
-            .callTimeout(5, TimeUnit.SECONDS)
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.SECONDS)
-            // Always use fresh sockets for IP detection so requests do not
-            // accidentally reuse connections opened before VPN routing changed.
-            .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
-            .retryOnConnectionFailure(false)
-            .build()
-        val endpoints = if (vpnState.value.isConnected) {
-            listOf(
-                "https://ipv4.icanhazip.com",
-                "https://api4.ipify.org",
-                "https://4.ipw.cn",
-                "https://ipv6.icanhazip.com",
-                "https://api6.ipify.org",
-                "https://6.ipw.cn"
-            )
+    private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
+        val client = ipCheckClient
+        val directIpv4Endpoints = listOf(
+            "https://4.ipw.cn",
+            "https://api.ip.sb/ip"
+        )
+        val directIpv6Endpoints = listOf(
+            "https://6.ipw.cn",
+            "https://api6.ipify.org"
+        )
+        val proxiedIpv4Endpoints = listOf(
+            "https://api4.ipify.org",
+            "https://v4.ident.me"
+        )
+        val proxiedIpv6Endpoints = listOf(
+            "https://api6.ipify.org",
+            "https://v6.ident.me"
+        )
+        val preferIpv6Only = isIpv6Literal(node?.server.orEmpty())
+        val useProxyFriendlyEndpoints = vpnState.value.isConnected
+        val ipv4Endpoints = if (useProxyFriendlyEndpoints) {
+            proxiedIpv4Endpoints
         } else {
-            listOf(
-                "https://4.ipw.cn",
-                "https://api.ip.sb/ip",
-                "https://ipv4.icanhazip.com",
-                "https://6.ipw.cn",
-                "https://ipv6.icanhazip.com"
-            )
+            directIpv4Endpoints + proxiedIpv4Endpoints
+        }
+        val ipv6Endpoints = if (useProxyFriendlyEndpoints) {
+            proxiedIpv6Endpoints
+        } else {
+            directIpv6Endpoints + proxiedIpv6Endpoints
+        }
+        val endpointGroups = if (preferIpv6Only) {
+            listOf(ipv6Endpoints)
+        } else {
+            listOf(ipv4Endpoints, ipv6Endpoints)
         }
 
         try {
-            supervisorScope {
-                val resultChannel = Channel<String?>(capacity = endpoints.size)
-                val jobs = endpoints.distinct().map { endpoint ->
-                    launch {
-                        resultChannel.trySend(fetchIpFromEndpoint(client, endpoint))
+            for (group in endpointGroups) {
+                val detected = supervisorScope {
+                    val uniqueEndpoints = group.distinct()
+                    val resultChannel = Channel<String?>(capacity = uniqueEndpoints.size)
+                    val jobs = uniqueEndpoints.map { endpoint ->
+                        launch {
+                            resultChannel.trySend(fetchIpFromEndpoint(client, endpoint))
+                        }
+                    }
+
+                    try {
+                        repeat(jobs.size) {
+                            val ip = resultChannel.receive()
+                            if (!ip.isNullOrBlank()) {
+                                return@supervisorScope ip
+                            }
+                        }
+                        null
+                    } finally {
+                        jobs.forEach { it.cancel() }
+                        resultChannel.close()
                     }
                 }
 
-                try {
-                    repeat(jobs.size) {
-                        val ip = resultChannel.receive()
-                        if (!ip.isNullOrBlank()) {
-                            return@supervisorScope ip
-                        }
-                    }
-                    null
-                } finally {
-                    jobs.forEach { it.cancel() }
-                    resultChannel.close()
+                if (!detected.isNullOrBlank()) {
+                    return@withContext detected
                 }
             }
+            "检测失败，点击重试"
         } finally {
             client.dispatcher.cancelAll()
             client.connectionPool.evictAll()
-            client.dispatcher.executorService.shutdown()
-        } ?: "检测失败，点击重试"
+        }
     }
 
     private suspend fun fetchIpFromEndpoint(client: OkHttpClient, endpoint: String): String? =
@@ -607,6 +632,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun isLikelyIpAddress(value: String): Boolean {
         val text = value.trim()
         return IPV4_REGEX.matches(text) || (text.contains(':') && IPV6_REGEX.matches(text))
+    }
+
+    private fun isIpv6Literal(host: String): Boolean {
+        val value = host
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+            .substringBefore('%')
+        if (!value.contains(':')) return false
+        return value.all { it.isDigit() || it in "abcdefABCDEF:." }
     }
 
     private fun handleConnectionFailure(context: Context, rawError: String) {

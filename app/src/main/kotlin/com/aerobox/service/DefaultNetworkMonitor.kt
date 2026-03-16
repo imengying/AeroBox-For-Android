@@ -27,8 +27,11 @@ object DefaultNetworkMonitor {
     var defaultNetwork: Network? = null
         private set
 
+    @Volatile
     private var listener: InterfaceUpdateListener? = null
+    @Volatile
     private var networkChangedCallback: ((Network?) -> Unit)? = null
+    @Volatile
     private var registered = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingLossLog: Runnable? = null
