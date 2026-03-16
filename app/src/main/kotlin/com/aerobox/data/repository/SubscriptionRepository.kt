@@ -12,6 +12,8 @@ import com.aerobox.data.model.matchScore
 import com.aerobox.data.model.normalizedDisplayName
 import com.aerobox.utils.PreferenceManager
 import com.aerobox.work.SubscriptionUpdateScheduler
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.first
 import okhttp3.Call
@@ -177,9 +179,9 @@ class SubscriptionRepository(context: Context) {
     }
 
     suspend fun refreshAllSubscriptions(subscriptions: List<Subscription>): List<Result<SubscriptionUpdateResult>> {
-        val results = kotlinx.coroutines.coroutineScope {
+        val results = coroutineScope {
             subscriptions.map { subscription ->
-                kotlinx.coroutines.async {
+                async {
                     runCatching { updateSubscriptionInternal(subscription) }
                 }
             }.map { it.await() }

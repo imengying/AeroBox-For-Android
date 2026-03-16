@@ -62,6 +62,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         const val EXTRA_NODE_ID = "extra_node_id"
         const val NOTIFICATION_ID = 1001
         private const val TAG = "AeroBoxVpnService"
+        private const val MAX_RECONNECT_ATTEMPTS = 10
 
         val isServiceActive: StateFlow<Boolean> = VpnStateManager.serviceActive
     }
@@ -79,9 +80,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
-    private companion object {
-        const val MAX_RECONNECT_ATTEMPTS = 10
-    }
     private var cachedConnectedNode: ProxyNode? = null
 
     private data class StartRequest(
