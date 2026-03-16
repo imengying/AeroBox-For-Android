@@ -73,10 +73,17 @@ object GeoAssetManager {
     fun getGeoSiteSize(context: Context): String = formatFileSize(getGeoSiteFile(context))
     fun getGeoAdsSize(context: Context): String = formatFileSize(getGeoAdsFile(context))
 
-    suspend fun updateAll(context: Context): Boolean {
-        val ip = updateGeoIp(context)
-        val site = updateGeoSite(context)
-        return ip && site
+    suspend fun updateAll(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val ipOk = downloadFile(GEOIP_CN_URL, getGeoIpFile(context))
+        if (ipOk) {
+            writeVersionFile(getGeoIpVersionFile(context), fetchLatestReleaseTag(GEOIP_REPO))
+        }
+        val cnOk = downloadFile(GEOSITE_CN_URL, getGeoSiteFile(context))
+        val adsOk = downloadFile(GEOSITE_ADS_URL, getGeoAdsFile(context))
+        if (cnOk && adsOk) {
+            writeVersionFile(getGeoSiteVersionFile(context), fetchLatestReleaseTag(GEOSITE_REPO))
+        }
+        ipOk && cnOk && adsOk
     }
 
     @Synchronized
