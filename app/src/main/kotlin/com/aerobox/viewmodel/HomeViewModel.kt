@@ -651,8 +651,4 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _connectionIssue.value = issue
         _uiMessage.tryEmit("${context.getString(com.aerobox.R.string.operation_failed)}: ${issue.title}")
     }
-
-    override fun onCleared() {
-        super.onCleared()
-    }
 }

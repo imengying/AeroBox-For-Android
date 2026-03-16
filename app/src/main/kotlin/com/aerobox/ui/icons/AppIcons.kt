@@ -179,29 +179,4 @@ object AppIcons {
             }
         }.build()
     }
-
-    val Stop: ImageVector by lazy {
-        ImageVector.Builder("Stop", 24.dp, 24.dp, 24f, 24f).apply {
-            path(fill = SolidColor(Color.Black)) {
-                moveTo(6f, 6f)
-                horizontalLineToRelative(12f)
-                verticalLineToRelative(12f)
-                horizontalLineTo(6f)
-                close()
-            }
-        }.build()
-    }
-
-    val Circle: ImageVector by lazy {
-        ImageVector.Builder("Circle", 24.dp, 24.dp, 24f, 24f).apply {
-            path(fill = SolidColor(Color.Black)) {
-                moveTo(12f, 2f)
-                curveTo(6.47f, 2f, 2f, 6.47f, 2f, 12f)
-                reflectiveCurveToRelative(4.47f, 10f, 10f, 10f)
-                reflectiveCurveToRelative(10f, -4.47f, 10f, -10f)
-                reflectiveCurveTo(17.53f, 2f, 12f, 2f)
-                close()
-            }
-        }.build()
-    }
 }

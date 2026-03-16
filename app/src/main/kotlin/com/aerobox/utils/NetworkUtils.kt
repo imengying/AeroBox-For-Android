@@ -26,6 +26,4 @@ object NetworkUtils {
         }
         return pattern.format(value, units[digitGroups])
     }
-
-    fun formatSpeed(bps: Long): String = "${formatBytes(bps)}/s"
 }

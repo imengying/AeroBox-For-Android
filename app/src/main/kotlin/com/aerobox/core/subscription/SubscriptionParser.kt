@@ -143,10 +143,6 @@ object SubscriptionParser {
 
     private val timestampValuePattern = Regex("^\\d{10,13}$")
 
-    suspend fun parseSubscription(content: String): List<ProxyNode> {
-        return parseSubscriptionContent(content).nodes
-    }
-
     suspend fun parseSubscriptionContent(content: String): ParsedSubscription = withContext(Dispatchers.Default) {
         runCatching {
             val normalized = content.trim()

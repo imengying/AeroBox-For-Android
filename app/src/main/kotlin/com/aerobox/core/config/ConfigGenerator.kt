@@ -180,7 +180,7 @@ object ConfigGenerator {
             return JSONObject()
                 .put("servers", JSONArray().put(localServer).put(bootstrapServer))
                 .put("final", "local")
-                .putDestinationDomainStrategy(nodeIsIpv6Only)
+                .putDestinationDomainStrategy(nodeIsIpv6Only, ipv6Mode)
         }
 
         val remoteServer = buildDnsServer(
@@ -201,7 +201,7 @@ object ConfigGenerator {
                     .put(bootstrapServer)
             )
             .put("final", "remote")
-            .putDestinationDomainStrategy(nodeIsIpv6Only)
+            .putDestinationDomainStrategy(nodeIsIpv6Only, ipv6Mode)
 
         // Only add DNS routing rules for rule-based modes
         if (routingMode == RoutingMode.RULE_BASED) {
@@ -513,7 +513,7 @@ object ConfigGenerator {
             .put("auto_detect_interface", true)
             .put(
                 "default_domain_resolver",
-                buildDestinationDomainResolver("local", nodeIsIpv6Only)
+                buildDestinationDomainResolver("local", nodeIsIpv6Only, ipv6Mode)
             )
 
         val ruleSets = JSONArray()
@@ -737,7 +737,7 @@ object ConfigGenerator {
         if (!isIpLiteral(cleanServer)) {
             outbound.put(
                 "domain_resolver",
-                buildDialDomainResolver("bootstrap", ipv6Mode)
+                buildDialDomainResolver("bootstrap")
             )
         }
         return outbound
@@ -754,10 +754,12 @@ object ConfigGenerator {
             .trim()
     }
 
-    private fun buildDialDomainResolver(serverTag: String, ipv6Mode: IPv6Mode): JSONObject {
+    private fun buildDialDomainResolver(serverTag: String): JSONObject {
+        // Proxy server resolution always allows IPv6 so that IPv6-only nodes
+        // work regardless of the user's IPv6 toggle (which controls user traffic only).
         return JSONObject()
             .put("server", serverTag)
-            .put("strategy", ipv6Mode.domainStrategy())
+            .put("strategy", "prefer_ipv4")
     }
 
     private fun isIpv6Literal(server: String): Boolean {
@@ -766,14 +768,24 @@ object ConfigGenerator {
             normalized.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
     }
 
-    private fun buildDestinationDomainResolver(serverTag: String, nodeIsIpv6Only: Boolean): JSONObject {
+    private fun buildDestinationDomainResolver(serverTag: String, nodeIsIpv6Only: Boolean, ipv6Mode: IPv6Mode = IPv6Mode.DISABLE): JSONObject {
+        val strategy = when {
+            nodeIsIpv6Only -> "prefer_ipv6"
+            ipv6Mode == IPv6Mode.ENABLE -> "prefer_ipv4"
+            else -> "ipv4_only"
+        }
         return JSONObject()
             .put("server", serverTag)
-            .put("strategy", if (nodeIsIpv6Only) "prefer_ipv6" else "ipv4_only")
+            .put("strategy", strategy)
     }
 
-    private fun JSONObject.putDestinationDomainStrategy(nodeIsIpv6Only: Boolean): JSONObject {
-        put("strategy", if (nodeIsIpv6Only) "prefer_ipv6" else "ipv4_only")
+    private fun JSONObject.putDestinationDomainStrategy(nodeIsIpv6Only: Boolean, ipv6Mode: IPv6Mode = IPv6Mode.DISABLE): JSONObject {
+        val strategy = when {
+            nodeIsIpv6Only -> "prefer_ipv6"
+            ipv6Mode == IPv6Mode.ENABLE -> "prefer_ipv4"
+            else -> "ipv4_only"
+        }
+        put("strategy", strategy)
         return this
     }
 
