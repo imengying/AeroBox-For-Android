@@ -85,7 +85,8 @@ object SingBoxNative {
 
     fun queryV2RayOutboundStats(
         apiAddress: String,
-        outboundTags: List<String>
+        outboundTags: List<String>,
+        logErrors: Boolean = true
     ): OutboundTrafficStats? {
         if (outboundTags.isEmpty()) return OutboundTrafficStats(0L, 0L)
         return try {
@@ -99,8 +100,10 @@ object SingBoxNative {
             OutboundTrafficStats(upload, download)
         } catch (e: Exception) {
             val msg = e.message ?: "unknown error"
-            Log.w(TAG, "queryV2RayOutboundStats failed: $msg")
-            RuntimeLogBuffer.append("error", "queryV2RayOutboundStats failed: $msg")
+            if (logErrors) {
+                Log.w(TAG, "queryV2RayOutboundStats failed: $msg")
+                RuntimeLogBuffer.append("error", "queryV2RayOutboundStats failed: $msg")
+            }
             null
         }
     }

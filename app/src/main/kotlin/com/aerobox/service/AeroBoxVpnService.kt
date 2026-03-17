@@ -80,6 +80,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
+    private var hasIpv6Tun = false
     private var cachedConnectedNode: ProxyNode? = null
 
     private data class StartRequest(
@@ -343,6 +344,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     override fun openTun(options: TunOptions): Int {
         if (prepare(this) != null) error("android: missing vpn permission")
+        hasIpv6Tun = false
 
         val builder = Builder()
             .setSession("AeroBox")
@@ -365,17 +367,28 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }
         inet6Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
-        val hasIpv6 = inet6Addresses.isNotEmpty()
+        hasIpv6Tun = inet6Addresses.isNotEmpty()
         builder.setMetered(false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            DefaultNetworkMonitor.defaultNetwork?.let { network ->
+            if (hasIpv6Tun) {
                 runCatching {
-                    builder.setUnderlyingNetworks(arrayOf(network))
+                    builder.setUnderlyingNetworks(null)
                 }.onFailure {
                     RuntimeLogBuffer.append(
                         "debug",
-                        "Builder setUnderlyingNetworks skipped: ${it.message ?: it}"
+                        "Builder setUnderlyingNetworks(null) skipped: ${it.message ?: it}"
                     )
+                }
+            } else {
+                DefaultNetworkMonitor.defaultNetwork?.let { network ->
+                    runCatching {
+                        builder.setUnderlyingNetworks(arrayOf(network))
+                    }.onFailure {
+                        RuntimeLogBuffer.append(
+                            "debug",
+                            "Builder setUnderlyingNetworks skipped: ${it.message ?: it}"
+                        )
+                    }
                 }
             }
         }
@@ -408,7 +421,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             // on the VPN network. sing-box hijacks all DNS traffic, so the
             // actual address doesn't matter – it just needs to be routable
             // through the TUN.
-            if (hasIpv6) {
+            if (hasIpv6Tun) {
                 inet6Addresses.firstOrNull()?.let { (address, _) ->
                     runCatching { builder.addDnsServer(address) }
                 }
@@ -464,13 +477,28 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         val notification = buildNotification(contentText = initialSpeedText, connected = true)
         notificationManager.notify(NOTIFICATION_ID, notification)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
+            if (hasIpv6Tun) {
+                runCatching { setUnderlyingNetworks(null) }
+            } else {
+                updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
+            }
         }
         return pfd.fd
     }
 
     private fun updateUnderlyingNetwork(network: Network?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return
+        if (hasIpv6Tun) {
+            runCatching {
+                setUnderlyingNetworks(null)
+            }.onFailure {
+                RuntimeLogBuffer.append(
+                    "debug",
+                    "setUnderlyingNetworks(null) skipped: ${it.message ?: it}"
+                )
+            }
+            return
+        }
         runCatching {
             setUnderlyingNetworks(network?.let { arrayOf(it) })
         }.onFailure {
@@ -636,12 +664,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
     private fun startSpeedTicker() {
         speedTickerJob?.cancel()
-        val trackedOutbounds = listOf("proxy", "direct")
-        val initialStats = SingBoxNative.queryV2RayOutboundStats(
-            apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
-            outboundTags = trackedOutbounds
-        ) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
         speedTickerJob = serviceScope.launch {
+            val trackedOutbounds = listOf("proxy", "direct")
+            val initialStats = waitForOutboundStats(trackedOutbounds)
+                ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
             var prevUpload = initialStats.uploadBytes
             var prevDownload = initialStats.downloadBytes
 
@@ -671,6 +697,21 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                 notificationManager.notify(NOTIFICATION_ID, notification)
             }
         }
+    }
+
+    private suspend fun waitForOutboundStats(
+        trackedOutbounds: List<String>
+    ): SingBoxNative.OutboundTrafficStats? {
+        repeat(6) { attempt ->
+            val stats = SingBoxNative.queryV2RayOutboundStats(
+                apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
+                outboundTags = trackedOutbounds,
+                logErrors = attempt == 5
+            )
+            if (stats != null) return stats
+            delay(250)
+        }
+        return null
     }
 
     override fun onDestroy() {
