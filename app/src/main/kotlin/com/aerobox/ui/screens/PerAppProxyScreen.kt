@@ -102,14 +102,23 @@ fun PerAppProxyScreen(
     var showSystem by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Snapshot selected packages at screen open for stable sort order.
+    // Selecting/deselecting an app won't cause it to jump in the list.
+    val initialSelectedPackages = remember { selectedPackages }
+
     LaunchedEffect(Unit) {
         viewModel.loadInstalledApps()
     }
 
-    val filteredApps = remember(apps, showSystem, searchQuery, selectedPackages) {
+    val filteredApps = remember(apps, showSystem, searchQuery, selectedPackages, initialSelectedPackages) {
         apps
             .asSequence()
-            .filter { if (showSystem) true else !it.isSystem }
+            .filter { app ->
+                // Always show selected apps (even system apps) so they don't disappear
+                if (selectedPackages.contains(app.packageName)) return@filter true
+                if (!showSystem && app.isSystem) return@filter false
+                true
+            }
             .filter { app ->
                 val query = searchQuery.trim()
                 if (query.isBlank()) {
@@ -119,6 +128,11 @@ fun PerAppProxyScreen(
                         app.packageName.contains(query, ignoreCase = true)
                 }
             }
+            .sortedWith(
+                compareByDescending<com.aerobox.data.model.AppInfo> {
+                    initialSelectedPackages.contains(it.packageName)
+                }.thenBy { it.label.lowercase() }
+            )
             .toList()
     }
 

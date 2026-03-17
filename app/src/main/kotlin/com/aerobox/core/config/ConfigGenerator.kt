@@ -790,8 +790,10 @@ object ConfigGenerator {
     }
 
     private fun buildTlsObject(node: ProxyNode, includeReality: Boolean = false): JSONObject {
+        // Force TLS enabled when Reality is in use — Reality requires TLS.
+        val effectiveTls = node.tls || (includeReality && !node.publicKey.isNullOrBlank())
         val tls = JSONObject()
-            .put("enabled", node.tls)
+            .put("enabled", effectiveTls)
         if (node.allowInsecure) {
             tls.put("insecure", true)
         }

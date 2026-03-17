@@ -69,10 +69,13 @@ object ClashParser {
         if (type == ProxyType.SHADOWSOCKS && hasUnsupportedShadowsocksFeature(map)) return null
         if (type == ProxyType.HYSTERIA2 && hasUnsupportedHysteria2Feature(map)) return null
 
+        val hasRealityKey = !stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
+            !stringValue(map, "reality-opts", "public_key").isNullOrBlank() ||
+            !stringValue(map, "public-key").isNullOrBlank() ||
+            !stringValue(map, "pbk").isNullOrBlank()
         val security = firstNonBlank(
             stringValue(map, "security"),
-            if (!stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
-                !stringValue(map, "reality-opts", "public_key").isNullOrBlank()) "reality" else null
+            if (hasRealityKey) "reality" else null
         )
 
         val tls = when {
