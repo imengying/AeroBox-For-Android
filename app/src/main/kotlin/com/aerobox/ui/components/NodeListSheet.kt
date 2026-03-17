@@ -1,6 +1,5 @@
 package com.aerobox.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +46,7 @@ import com.aerobox.data.model.NodeLatencyState
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.Subscription
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NodeListSheet(
     nodes: List<ProxyNode>,

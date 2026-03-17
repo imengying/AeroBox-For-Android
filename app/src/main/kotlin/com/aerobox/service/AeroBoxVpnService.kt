@@ -42,15 +42,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.ConnectionPool
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Request
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.Socket
-import java.util.concurrent.TimeUnit
 
 /**
  * AeroBox VPN Service — implements PlatformInterfaceWrapper so libbox
@@ -82,8 +74,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var speedTickerJob: Job? = null
-    private var connectivityProbeJob: Job? = null
-    private var trafficProbeJob: Job? = null
     private var commandServer: CommandServer? = null
     private var receiverRegistered = false
 
@@ -514,164 +504,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
         }
-        startConnectivityProbe()
-        startTrafficProbe()
         return pfd.fd
-    }
-
-    private fun startConnectivityProbe() {
-        connectivityProbeJob?.cancel()
-        connectivityProbeJob = serviceScope.launch {
-            delay(1500)
-            logInfo("Connectivity probe starting")
-            // DNS probes — log resolved addresses for each target
-            runDnsProbe("probe-dns-example", "example.com")
-            runDnsProbe("probe-dns-cloudflare", "cloudflare.com")
-            runDnsProbe("probe-dns-google", "www.google.com")
-            runDnsProbe("probe-dns-ipv6-google", "ipv6.google.com")
-
-            // HTTPS probes — known-good targets
-            runHttpsProbe("probe-https-example", "https://example.com")
-            runHttpsProbe("probe-https-trace", "https://cloudflare.com/cdn-cgi/trace")
-            runHttpsProbe("probe-https-google-204", "https://www.google.com/generate_204")
-            runHttpsProbe("probe-https-gstatic-204", "https://www.gstatic.com/generate_204")
-            runHttpsProbe("probe-https-google-main", "https://www.google.com")
-
-            // Raw TCP connect to ipv6.google.com — tests IPv6 reachability through proxy
-            // If this fails, the VLESS server cannot reach IPv6 destinations at all.
-            runTcpConnectProbe("probe-tcp-ipv6-google", "ipv6.google.com", 443)
-
-            // HTTPS probes — the problematic target
-            runHttpsProbe("probe-https-ipv6-google", "https://ipv6.google.com")
-            // Same target forced HTTP/1.1 — rules out H2/ALPN negotiation issue
-            runHttpsProbe("probe-https-ipv6-google-h1", "https://ipv6.google.com", forceHttp1 = true)
-        }
-    }
-
-    private fun runDnsProbe(label: String, host: String) {
-        runCatching {
-            val addresses = InetAddress.getAllByName(host).toList()
-            val ipv4Count = addresses.count { !it.hostAddress.orEmpty().contains(':') }
-            val ipv6Count = addresses.count { it.hostAddress.orEmpty().contains(':') }
-            val addrs = addresses.joinToString(",") { it.hostAddress ?: "?" }
-            logInfo("$label ok: ipv4=$ipv4Count ipv6=$ipv6Count total=${addresses.size} addrs=[$addrs]")
-        }.onFailure { error ->
-            logWarn("$label failed: ${error.javaClass.simpleName}: ${error.message ?: error}")
-        }
-    }
-
-    private fun runHttpsProbe(label: String, url: String, forceHttp1: Boolean = false) {
-        val builder = OkHttpClient.Builder()
-            .proxy(Proxy.NO_PROXY)
-            .callTimeout(10, TimeUnit.SECONDS)
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(false)
-            .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
-        if (forceHttp1) {
-            builder.protocols(listOf(Protocol.HTTP_1_1))
-        }
-        val client = builder.build()
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "AeroBoxProbe/1.0")
-            .build()
-        runCatching {
-            client.newCall(request).execute().use { response ->
-                val proto = response.protocol.toString()
-                val hs = response.handshake
-                val tlsVer = hs?.tlsVersion?.javaName ?: "?"
-                val cipher = hs?.cipherSuite?.javaName
-                    ?.substringAfterLast('.')
-                    ?.takeIf { it.isNotBlank() } ?: "?"
-                if (label == "probe-https-trace") {
-                    val trace = response.body?.string().orEmpty()
-                    val fields = trace
-                        .lineSequence()
-                        .mapNotNull { line ->
-                            val index = line.indexOf('=')
-                            if (index <= 0) null else line.substring(0, index) to line.substring(index + 1)
-                        }
-                        .toMap()
-                    val http = fields["http"] ?: "?"
-                    val tls = fields["tls"] ?: "?"
-                    val loc = fields["loc"] ?: "?"
-                    val warp = fields["warp"] ?: "?"
-                    logInfo("$label ok: code=${response.code} proto=$proto tls=$tlsVer http=$http loc=$loc warp=$warp")
-                } else {
-                    val bodySize = response.body?.contentLength()?.takeIf { it >= 0 } ?: -1
-                    logInfo("$label ok: code=${response.code} proto=$proto tls=$tlsVer cipher=$cipher bodySize=$bodySize")
-                }
-            }
-        }.onFailure { error ->
-            logWarn("$label failed: ${formatErrorChain(error)}")
-        }
-    }
-
-    private fun runTcpConnectProbe(label: String, host: String, port: Int) {
-        runCatching {
-            val addresses = InetAddress.getAllByName(host)
-            val addr = addresses.firstOrNull() ?: error("no addresses for $host")
-            logInfo("$label connecting to ${addr.hostAddress}:$port")
-            val socket = Socket()
-            socket.connect(InetSocketAddress(addr, port), 8000)
-            val remoteAddr = socket.inetAddress.hostAddress
-            socket.close()
-            logInfo("$label ok: tcp connected to $remoteAddr:$port")
-        }.onFailure { error ->
-            logWarn("$label failed: ${formatErrorChain(error)}")
-        }
-    }
-
-    private fun formatErrorChain(error: Throwable): String {
-        return buildString {
-            append("${error.javaClass.simpleName}: ${error.message}")
-            var cause = error.cause
-            var depth = 0
-            while (cause != null && depth < 4) {
-                append(" -> ${cause.javaClass.simpleName}: ${cause.message}")
-                cause = cause.cause
-                depth++
-            }
-        }
-    }
-
-    private fun startTrafficProbe() {
-        trafficProbeJob?.cancel()
-        trafficProbeJob = serviceScope.launch {
-            delay(1500)
-            val proxyTag = listOf("proxy")
-            val directTag = listOf("direct")
-            var prevProxy = waitForOutboundStats(proxyTag) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
-            var prevDirect = waitForOutboundStats(directTag) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
-            repeat(20) {
-                delay(1000)
-                val currentProxy = SingBoxNative.queryV2RayOutboundStats(
-                    apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
-                    outboundTags = proxyTag,
-                    logErrors = false
-                ) ?: prevProxy
-                val currentDirect = SingBoxNative.queryV2RayOutboundStats(
-                    apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
-                    outboundTags = directTag,
-                    logErrors = false
-                ) ?: prevDirect
-
-                val proxyUp = (currentProxy.uploadBytes - prevProxy.uploadBytes).coerceAtLeast(0L)
-                val proxyDown = (currentProxy.downloadBytes - prevProxy.downloadBytes).coerceAtLeast(0L)
-                val directUp = (currentDirect.uploadBytes - prevDirect.uploadBytes).coerceAtLeast(0L)
-                val directDown = (currentDirect.downloadBytes - prevDirect.downloadBytes).coerceAtLeast(0L)
-
-                logInfo(
-                    "traffic-probe: " +
-                        "proxy(up=$proxyUp,down=$proxyDown) " +
-                        "direct(up=$directUp,down=$directDown)"
-                )
-
-                prevProxy = currentProxy
-                prevDirect = currentDirect
-            }
-        }
     }
 
     private fun updateUnderlyingNetwork(network: Network?) {
@@ -895,8 +728,6 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     override fun onDestroy() {
         userRequestedStop = true
         stopService("Stopping service: onDestroy")
-        connectivityProbeJob?.cancel()
-        trafficProbeJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }

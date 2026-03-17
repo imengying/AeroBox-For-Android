@@ -769,7 +769,16 @@ object ConfigGenerator {
             }
         }
         if (!isIpLiteral(cleanServer)) {
-            outbound.put("domain_strategy", "prefer_ipv4")
+            // Use domain_resolver (not domain_strategy) so that only the proxy
+            // SERVER address is resolved locally.  domain_strategy would also
+            // resolve the destination domain locally and send the IP instead of
+            // the domain, breaking DNS64/NAT64 setups on IPv6-only servers.
+            outbound.put(
+                "domain_resolver",
+                JSONObject()
+                    .put("server", DNS_DIRECT_TAG)
+                    .put("strategy", "prefer_ipv4")
+            )
         }
         return outbound
     }

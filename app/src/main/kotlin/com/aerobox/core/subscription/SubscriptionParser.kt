@@ -841,7 +841,7 @@ object SubscriptionParser {
         )
     }
 
-    fun parseUriParams(query: String?): Map<String, String> {
+    private fun parseUriParams(query: String?): Map<String, String> {
         if (query.isNullOrBlank()) return emptyMap()
         return query.split("&")
             .mapNotNull { entry ->
