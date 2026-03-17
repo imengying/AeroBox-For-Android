@@ -3,7 +3,7 @@
 
 AeroBox for Android is a sing-box / libbox based proxy toolchain for Android.
 
-一款基于 sing-box / libbox 的 Android 通用代理软件。
+一款基于 sing-box / libbox 的 Android 原生通用代理软件。
 
 ## 下载 / Downloads
 

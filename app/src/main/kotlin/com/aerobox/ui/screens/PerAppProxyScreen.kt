@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.viewmodel.SettingsViewModel
+import com.aerobox.data.model.InstalledAppInfo
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import kotlinx.coroutines.launch
 
@@ -129,7 +130,7 @@ fun PerAppProxyScreen(
                 }
             }
             .sortedWith(
-                compareByDescending<com.aerobox.data.model.AppInfo> {
+                compareByDescending<InstalledAppInfo> {
                     initialSelectedPackages.contains(it.packageName)
                 }.thenBy { it.label.lowercase() }
             )
