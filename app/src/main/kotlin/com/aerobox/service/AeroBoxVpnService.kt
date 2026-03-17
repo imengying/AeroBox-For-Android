@@ -80,6 +80,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var vpnInterface: ParcelFileDescriptor? = null
     private var speedTickerJob: Job? = null
     private var connectivityProbeJob: Job? = null
+    private var trafficProbeJob: Job? = null
     private var commandServer: CommandServer? = null
     private var receiverRegistered = false
 
@@ -511,6 +512,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
         }
         startConnectivityProbe()
+        startTrafficProbe()
         return pfd.fd
     }
 
@@ -574,6 +576,44 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             }
         }.onFailure { error ->
             logWarn("$label failed: ${error.javaClass.simpleName}: ${error.message ?: error}")
+        }
+    }
+
+    private fun startTrafficProbe() {
+        trafficProbeJob?.cancel()
+        trafficProbeJob = serviceScope.launch {
+            delay(1500)
+            val proxyTag = listOf("proxy")
+            val directTag = listOf("direct")
+            var prevProxy = waitForOutboundStats(proxyTag) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
+            var prevDirect = waitForOutboundStats(directTag) ?: SingBoxNative.OutboundTrafficStats(0L, 0L)
+            repeat(20) {
+                delay(1000)
+                val currentProxy = SingBoxNative.queryV2RayOutboundStats(
+                    apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
+                    outboundTags = proxyTag,
+                    logErrors = false
+                ) ?: prevProxy
+                val currentDirect = SingBoxNative.queryV2RayOutboundStats(
+                    apiAddress = ConfigGenerator.V2RAY_API_LISTEN,
+                    outboundTags = directTag,
+                    logErrors = false
+                ) ?: prevDirect
+
+                val proxyUp = (currentProxy.uploadBytes - prevProxy.uploadBytes).coerceAtLeast(0L)
+                val proxyDown = (currentProxy.downloadBytes - prevProxy.downloadBytes).coerceAtLeast(0L)
+                val directUp = (currentDirect.uploadBytes - prevDirect.uploadBytes).coerceAtLeast(0L)
+                val directDown = (currentDirect.downloadBytes - prevDirect.downloadBytes).coerceAtLeast(0L)
+
+                logInfo(
+                    "traffic-probe: " +
+                        "proxy(up=$proxyUp,down=$proxyDown) " +
+                        "direct(up=$directUp,down=$directDown)"
+                )
+
+                prevProxy = currentProxy
+                prevDirect = currentDirect
+            }
         }
     }
 
@@ -799,6 +839,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         userRequestedStop = true
         stopService("Stopping service: onDestroy")
         connectivityProbeJob?.cancel()
+        trafficProbeJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
