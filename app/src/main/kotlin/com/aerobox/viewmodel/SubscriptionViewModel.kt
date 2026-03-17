@@ -124,8 +124,13 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
 
     fun updateAllSubscriptions() {
         viewModelScope.launch {
-            _isLoading.value = true
             val subs = subscriptions.value
+            if (subs.isEmpty()) {
+                _uiMessage.tryEmit("暂无订阅可更新")
+                return@launch
+            }
+
+            _isLoading.value = true
             val results = repository.refreshAllSubscriptions(subs)
             val successResults = results.mapNotNull { it.getOrNull() }
             val successCount = successResults.size
