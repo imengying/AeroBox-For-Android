@@ -523,8 +523,11 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             logInfo("Connectivity probe starting")
             runDnsProbe("probe-dns-example", "example.com")
             runDnsProbe("probe-dns-cloudflare", "cloudflare.com")
+            runDnsProbe("probe-dns-ipv6-google", "ipv6.google.com")
             runHttpsProbe("probe-https-example", "https://example.com")
             runHttpsProbe("probe-https-trace", "https://cloudflare.com/cdn-cgi/trace")
+            runHttpsProbe("probe-https-ipv6-google", "https://ipv6.google.com")
+            runHttpsProbe("probe-https-google-204", "https://www.google.com/generate_204")
         }
     }
 
