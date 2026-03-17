@@ -4,6 +4,7 @@ import android.content.Context
 import com.aerobox.AeroBoxApplication
 import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.core.geo.GeoAssetManager
+import com.aerobox.core.logging.ConfigSnapshotWriter
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.native.SingBoxNative
 import com.aerobox.data.model.ProxyNode
@@ -87,7 +88,7 @@ class VpnConfigResolver(private val context: Context) {
             null
         }
 
-        return ConfigGenerator.generateSingBoxConfig(
+        val config = ConfigGenerator.generateSingBoxConfig(
             node = node,
             routingMode = prefs.routingMode,
             remoteDns = prefs.remoteDns,
@@ -104,6 +105,13 @@ class VpnConfigResolver(private val context: Context) {
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
         )
+        ConfigSnapshotWriter.writeCurrentConfig(
+            context = context,
+            node = node,
+            config = config,
+            source = "vpn"
+        )
+        return config
     }
 
     fun validateConfig(config: String): String? {
