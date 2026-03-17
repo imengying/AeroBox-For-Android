@@ -168,8 +168,7 @@ object ConfigGenerator {
         // so DoH endpoints resolve to IPv6 addresses reachable through the proxy.
         val remoteDnsStrategy = if (nodeIsIpv6Only) "prefer_ipv6" else ipv6Mode.domainStrategy()
         val localResolverServer = buildLocalPlatformDnsServer(
-            tag = DNS_LOCAL_TAG,
-            detour = "direct"
+            tag = DNS_LOCAL_TAG
         )
         val bootstrapServer = buildDnsServer(
             tag = DNS_BOOTSTRAP_TAG,
@@ -180,7 +179,6 @@ object ConfigGenerator {
         val directServer = buildDnsServer(
             tag = DNS_DIRECT_TAG,
             dns = normalizeLocalDnsAddress(localDns),
-            detour = "direct",
             resolverTag = DNS_LOCAL_TAG,
             ipv6Mode = ipv6Mode
         )
@@ -259,13 +257,10 @@ object ConfigGenerator {
         return "1.1.1.1"
     }
 
-    private fun buildLocalPlatformDnsServer(tag: String, detour: String? = null): JSONObject {
+    private fun buildLocalPlatformDnsServer(tag: String): JSONObject {
         return JSONObject()
             .put("type", "local")
             .put("tag", tag)
-            .apply {
-                detour?.let { put("detour", it) }
-            }
     }
 
     private fun buildDnsServer(
@@ -772,6 +767,9 @@ object ConfigGenerator {
             if (network != "tcp" && network.isNotBlank()) {
                 outbound.put("transport", buildTransport(node))
             }
+        }
+        if (!isIpLiteral(cleanServer)) {
+            outbound.put("domain_strategy", "prefer_ipv4")
         }
         return outbound
     }
