@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.net.ConnectivityManager
 import androidx.room.Room
+import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.data.database.AppDatabase
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.core.native.SingBoxNative
@@ -25,6 +26,7 @@ class AeroBoxApplication : Application() {
 
         // Ensure singleton initialization
         database
+        RuntimeLogBuffer.initialize(this)
         VpnStateManager.resetTrafficSession()
         createNotificationChannel()
         SingBoxNative.setup(this)
