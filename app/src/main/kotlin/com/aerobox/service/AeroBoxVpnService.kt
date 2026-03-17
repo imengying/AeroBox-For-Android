@@ -42,7 +42,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.ConnectionPool
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.Proxy
 import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 
 /**
  * AeroBox VPN Service — implements PlatformInterfaceWrapper so libbox
@@ -74,6 +79,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var speedTickerJob: Job? = null
+    private var connectivityProbeJob: Job? = null
     private var commandServer: CommandServer? = null
     private var receiverRegistered = false
 
@@ -504,7 +510,71 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             updateUnderlyingNetwork(DefaultNetworkMonitor.defaultNetwork)
         }
+        startConnectivityProbe()
         return pfd.fd
+    }
+
+    private fun startConnectivityProbe() {
+        connectivityProbeJob?.cancel()
+        connectivityProbeJob = serviceScope.launch {
+            delay(1500)
+            logInfo("Connectivity probe starting")
+            runDnsProbe("probe-dns-example", "example.com")
+            runDnsProbe("probe-dns-cloudflare", "cloudflare.com")
+            runHttpsProbe("probe-https-example", "https://example.com")
+            runHttpsProbe("probe-https-trace", "https://cloudflare.com/cdn-cgi/trace")
+        }
+    }
+
+    private fun runDnsProbe(label: String, host: String) {
+        runCatching {
+            val addresses = InetAddress.getAllByName(host).toList()
+            val ipv4Count = addresses.count { !it.hostAddress.contains(':') }
+            val ipv6Count = addresses.count { it.hostAddress.contains(':') }
+            logInfo("$label ok: ipv4=$ipv4Count ipv6=$ipv6Count total=${addresses.size}")
+        }.onFailure { error ->
+            logWarn("$label failed: ${error.javaClass.simpleName}: ${error.message ?: error}")
+        }
+    }
+
+    private fun runHttpsProbe(label: String, url: String) {
+        val client = OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
+            .callTimeout(8, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "AeroBoxProbe/1.0")
+            .build()
+        runCatching {
+            client.newCall(request).execute().use { response ->
+                val protocol = response.protocol.toString()
+                if (label == "probe-https-trace") {
+                    val trace = response.body?.string().orEmpty()
+                    val fields = trace
+                        .lineSequence()
+                        .mapNotNull { line ->
+                            val index = line.indexOf('=')
+                            if (index <= 0) null else line.substring(0, index) to line.substring(index + 1)
+                        }
+                        .toMap()
+                    val http = fields["http"] ?: "?"
+                    val tls = fields["tls"] ?: "?"
+                    val loc = fields["loc"] ?: "?"
+                    val warp = fields["warp"] ?: "?"
+                    logInfo("$label ok: code=${response.code} protocol=$protocol http=$http tls=$tls loc=$loc warp=$warp")
+                } else {
+                    val bodySize = response.body?.contentLength()?.takeIf { it >= 0 } ?: -1
+                    logInfo("$label ok: code=${response.code} protocol=$protocol bodySize=$bodySize")
+                }
+            }
+        }.onFailure { error ->
+            logWarn("$label failed: ${error.javaClass.simpleName}: ${error.message ?: error}")
+        }
     }
 
     private fun updateUnderlyingNetwork(network: Network?) {
@@ -728,6 +798,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     override fun onDestroy() {
         userRequestedStop = true
         stopService("Stopping service: onDestroy")
+        connectivityProbeJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
