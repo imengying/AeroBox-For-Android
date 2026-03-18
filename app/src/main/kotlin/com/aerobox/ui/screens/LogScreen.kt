@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aerobox.ui.components.AppSnackbarHost
+import com.aerobox.ui.icons.AppIcons
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.logging.RuntimeLogEntry
 import java.text.SimpleDateFormat
@@ -91,7 +91,7 @@ fun LogScreen(
                         },
                         enabled = logLines.isNotEmpty()
                     ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = "复制全部日志")
+                        Icon(AppIcons.ContentCopy, contentDescription = "复制全部日志")
                     }
                     IconButton(onClick = { RuntimeLogBuffer.clear() }) {
                         Icon(Icons.Filled.Delete, contentDescription = "清空日志")

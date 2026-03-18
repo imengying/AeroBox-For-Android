@@ -2,11 +2,13 @@ package com.aerobox.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,7 +66,9 @@ fun NodeListSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        BoxWithConstraints {
+            val listMaxHeight = maxHeight * 0.65f
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
             if (nodes.isEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -185,7 +189,9 @@ fun NodeListSheet(
                 Spacer(Modifier.height(8.dp))
 
                 LazyColumn(
-                    modifier = Modifier.height(400.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 240.dp, max = listMaxHeight),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(currentGroupNodes, key = { it.id }) { node ->
@@ -200,6 +206,7 @@ fun NodeListSheet(
             }
 
             Spacer(Modifier.height(16.dp))
+            }
         }
     }
 }

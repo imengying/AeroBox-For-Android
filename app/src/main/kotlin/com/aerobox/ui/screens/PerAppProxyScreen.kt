@@ -4,6 +4,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -171,32 +173,37 @@ fun PerAppProxyScreen(
                 .padding(innerPadding)
         ) {
             // Mode selector + system app toggle
-            Row(
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilterChip(
-                    selected = mode == "blacklist",
-                    onClick = { scope.launch { viewModel.setPerAppProxyMode("blacklist") } },
-                    label = { Text("绕过选中") }
-                )
-                FilterChip(
-                    selected = mode == "whitelist",
-                    onClick = { scope.launch { viewModel.setPerAppProxyMode("whitelist") } },
-                    label = { Text("仅代理选中") }
-                )
-                FilterChip(
-                    selected = effectiveShowSystem,
-                    onClick = {
-                        val next = !effectiveShowSystem
-                        pendingShowSystem = next
-                        scope.launch { viewModel.setPerAppShowSystem(next) }
-                    },
-                    label = { Text("显示系统") }
-                )
+                item {
+                    FilterChip(
+                        selected = mode == "blacklist",
+                        onClick = { scope.launch { viewModel.setPerAppProxyMode("blacklist") } },
+                        label = { Text("绕过选中") }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = mode == "whitelist",
+                        onClick = { scope.launch { viewModel.setPerAppProxyMode("whitelist") } },
+                        label = { Text("仅代理选中") }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = effectiveShowSystem,
+                        onClick = {
+                            val next = !effectiveShowSystem
+                            pendingShowSystem = next
+                            scope.launch { viewModel.setPerAppShowSystem(next) }
+                        },
+                        label = { Text("显示系统") }
+                    )
+                }
             }
 
             Text(
@@ -236,7 +243,7 @@ fun PerAppProxyScreen(
             if (filteredApps.isEmpty()) {
                 Text(
                     text = if (isLoadingApps) {
-                        "正在加载应用列表..."
+                        "加载中"
                     } else if (apps.isEmpty()) {
                         "未获取到应用列表，可稍后重试"
                     } else {
