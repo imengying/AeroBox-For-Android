@@ -11,7 +11,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor
  * Only reads the `proxies:` list and maps each node into the app's internal model.
  */
 object ClashParser {
-    private val supportedTransportNetworks get() = SubscriptionParser.supportedTransportNetworks
+    private val supportedTransportTypes get() = SubscriptionParser.supportedTransportTypes
 
     fun parseClashYaml(content: String): List<ProxyNode> {
         val root = loadYamlRoot(content) ?: return emptyList()
@@ -66,9 +66,6 @@ object ClashParser {
             "http", "https" -> ProxyType.HTTP
             else -> return null
         }
-        if (type == ProxyType.SHADOWSOCKS && hasUnsupportedShadowsocksFeature(map)) return null
-        if (type == ProxyType.HYSTERIA2 && hasUnsupportedHysteria2Feature(map)) return null
-
         val hasRealityKey = !stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
             !stringValue(map, "reality-opts", "public_key").isNullOrBlank() ||
             !stringValue(map, "public-key").isNullOrBlank() ||
@@ -97,8 +94,20 @@ object ClashParser {
             hasValue(map, "http-upgrade-path") || hasValue(map, "http-upgrade-host") -> "httpupgrade"
             else -> null
         }
-        val normalizedNetwork = resolveTransportNetwork(network)
-        if (network != null && normalizedNetwork == null) return null
+        val transportType = resolveTransportType(network)
+        if (network != null && network.lowercase() != "tcp" && transportType == null) return null
+        val httpOpts = value(map, "http-opts")
+        val wsOpts = value(map, "ws-opts")
+        val grpcOpts = value(map, "grpc-opts")
+        val smux = value(map, "smux")
+        val smuxBrutal = value(smux, "brutal")
+        val udpOverTcp = parseUdpOverTcp(
+            firstNonNullValue(
+                value(map, "udp-over-tcp"),
+                value(map, "udp_over_tcp"),
+                value(map, "uot")
+            )
+        )
         val transportPath = firstNonBlank(
             stringValue(map, "ws-opts", "path"),
             stringValue(map, "ws-path"),
@@ -125,7 +134,7 @@ object ClashParser {
             stringValue(map, "grpc-service-name"),
             stringValue(map, "service-name"),
             stringValue(map, "serviceName"),
-            if (normalizedNetwork == "grpc") transportPath else null
+            if (transportType == "grpc") transportPath else null
         )
 
         val insecure = booleanValue(map, "skip-cert-verify") == true
@@ -158,6 +167,24 @@ object ClashParser {
             type = type,
             server = server,
             port = port,
+            detour = firstNonBlank(
+                stringValue(map, "dialer-proxy"),
+                stringValue(map, "dialer_proxy")
+            ),
+            bindInterface = firstNonBlank(
+                stringValue(map, "interface-name"),
+                stringValue(map, "interface_name")
+            ),
+            routingMark = firstNonBlank(
+                stringValue(map, "routing-mark"),
+                stringValue(map, "routing_mark")
+            ),
+            connectTimeout = firstNonBlank(
+                stringValue(map, "connect-timeout"),
+                stringValue(map, "connect_timeout")
+            ),
+            tcpFastOpen = booleanValue(map, "tfo"),
+            udpFragment = booleanValue(map, "udp-fragment") ?: booleanValue(map, "udp_fragment"),
             uuid = firstNonBlank(stringValue(map, "uuid"), stringValue(map, "id")),
             alterId = intValue(map, "alterId") ?: intValue(map, "alter_id") ?: intValue(map, "aid") ?: 0,
             password = firstNonBlank(
@@ -169,7 +196,9 @@ object ClashParser {
             method = firstNonBlank(stringValue(map, "cipher"), stringValue(map, "method")),
             flow = stringValue(map, "flow"),
             security = security,
-            network = normalizedNetwork,
+            transportType = transportType,
+            globalPadding = booleanValue(map, "global-padding") ?: booleanValue(map, "global_padding"),
+            authenticatedLength = booleanValue(map, "authenticated-length") ?: booleanValue(map, "authenticated_length"),
             tls = tls,
             sni = firstNonBlank(
                 stringValue(map, "sni"),
@@ -177,8 +206,33 @@ object ClashParser {
                 stringValue(map, "server-name")
             ),
             transportHost = transportHost,
-            transportPath = if (normalizedNetwork == "grpc") null else transportPath,
+            transportPath = if (transportType == "grpc") null else transportPath,
             transportServiceName = transportServiceName,
+            transportMethod = stringValue(httpOpts, "method"),
+            transportHeaders = firstNonBlank(
+                canonicalizeJsonValue(value(wsOpts, "headers")),
+                canonicalizeJsonValue(value(httpOpts, "headers")),
+                canonicalizeJsonValue(value(map, "headers"))
+            ),
+            transportIdleTimeout = firstNonBlank(
+                stringValue(grpcOpts, "idle-timeout"),
+                stringValue(grpcOpts, "idle_timeout"),
+                stringValue(httpOpts, "idle-timeout"),
+                stringValue(httpOpts, "idle_timeout")
+            ),
+            transportPingTimeout = firstNonBlank(
+                stringValue(grpcOpts, "ping-timeout"),
+                stringValue(grpcOpts, "ping_timeout"),
+                stringValue(httpOpts, "ping-timeout"),
+                stringValue(httpOpts, "ping_timeout")
+            ),
+            transportPermitWithoutStream = booleanValue(grpcOpts, "permit-without-stream")
+                ?: booleanValue(grpcOpts, "permit_without_stream"),
+            wsMaxEarlyData = intValue(wsOpts, "max-early-data") ?: intValue(wsOpts, "max_early_data"),
+            wsEarlyDataHeaderName = firstNonBlank(
+                stringValue(wsOpts, "early-data-header-name"),
+                stringValue(wsOpts, "early_data_header_name")
+            ),
             alpn = joinedValue(map, "alpn"),
             fingerprint = fingerprint,
             publicKey = publicKey,
@@ -188,7 +242,41 @@ object ClashParser {
                 stringValue(map, "packet_encoding")
             ),
             username = stringValue(map, "username"),
+            socksVersion = stringValue(map, "version"),
+            httpHeaders = canonicalizeJsonValue(value(map, "headers")),
             allowInsecure = insecure,
+            plugin = stringValue(map, "plugin"),
+            pluginOpts = firstNonBlank(
+                pluginOptionsValue(value(map, "plugin-opts")),
+                pluginOptionsValue(value(map, "plugin_opts"))
+            ),
+            udpOverTcpEnabled = udpOverTcp.first,
+            udpOverTcpVersion = udpOverTcp.second,
+            obfsType = stringValue(map, "obfs"),
+            obfsPassword = firstNonBlank(
+                stringValue(map, "obfs-password"),
+                stringValue(map, "obfs_password")
+            ),
+            serverPorts = firstNonBlank(
+                joinedValue(map, "server-ports"),
+                joinedValue(map, "server_ports"),
+                stringValue(map, "mport")
+            ),
+            hopInterval = firstNonBlank(
+                stringValue(map, "hop-interval"),
+                stringValue(map, "hop_interval")
+            ),
+            upMbps = intValue(map, "up-mbps") ?: intValue(map, "up_mbps"),
+            downMbps = intValue(map, "down-mbps") ?: intValue(map, "down_mbps"),
+            muxEnabled = booleanValue(smux, "enabled"),
+            muxProtocol = stringValue(smux, "protocol"),
+            muxMaxConnections = intValue(smux, "max-connections") ?: intValue(smux, "max_connections"),
+            muxMinStreams = intValue(smux, "min-streams") ?: intValue(smux, "min_streams"),
+            muxMaxStreams = intValue(smux, "max-streams") ?: intValue(smux, "max_streams"),
+            muxPadding = booleanValue(smux, "padding"),
+            muxBrutalEnabled = booleanValue(smuxBrutal, "enabled"),
+            muxBrutalUpMbps = intValue(smuxBrutal, "up-mbps") ?: intValue(smuxBrutal, "up_mbps"),
+            muxBrutalDownMbps = intValue(smuxBrutal, "down-mbps") ?: intValue(smuxBrutal, "down_mbps"),
             congestionControl = firstNonBlank(
                 stringValue(map, "congestion-controller"),
                 stringValue(map, "congestion_control"),
@@ -197,7 +285,10 @@ object ClashParser {
             udpRelayMode = firstNonBlank(
                 stringValue(map, "udp-relay-mode"),
                 stringValue(map, "udp_relay_mode")
-            )
+            ),
+            udpOverStream = booleanValue(map, "udp-over-stream") ?: booleanValue(map, "udp_over_stream"),
+            zeroRttHandshake = booleanValue(map, "zero-rtt-handshake") ?: booleanValue(map, "zero_rtt_handshake"),
+            heartbeat = stringValue(map, "heartbeat")
         )
     }
 
@@ -214,6 +305,10 @@ object ClashParser {
 
     private fun hasValue(source: Any?, vararg path: String): Boolean {
         return value(source, *path) != null
+    }
+
+    private fun firstNonNullValue(vararg values: Any?): Any? {
+        return values.firstOrNull { it != null }
     }
 
     private fun stringValue(source: Any?, vararg path: String): String? {
@@ -262,7 +357,7 @@ object ClashParser {
         }
     }
 
-    private fun normalizeNetwork(value: String?): String? {
+    private fun normalizeTransportType(value: String?): String? {
         val normalized = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
         return when (normalized) {
             "websocket" -> "ws"
@@ -271,25 +366,76 @@ object ClashParser {
         }
     }
 
-    private fun resolveTransportNetwork(rawNetwork: String?): String? {
-        val normalized = normalizeNetwork(rawNetwork) ?: return null
-        return normalized.takeIf { it in supportedTransportNetworks }
+    private fun resolveTransportType(rawNetwork: String?): String? {
+        val normalized = normalizeTransportType(rawNetwork) ?: return null
+        if (normalized == "tcp") return null
+        return normalized.takeIf { it in supportedTransportTypes }
     }
 
     private fun firstNonBlank(vararg values: String?): String? {
         return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun hasUnsupportedShadowsocksFeature(map: Map<*, *>): Boolean {
-        return stringValue(map, "plugin") != null ||
-            value(map, "plugin-opts") != null ||
-            value(map, "plugin_opts") != null ||
-            stringValue(map, "obfs") != null
+    private fun pluginOptionsValue(value: Any?): String? {
+        return when (value) {
+            null -> null
+            is String -> value.trim().takeIf { it.isNotEmpty() }
+            is Map<*, *> -> value.entries
+                .mapNotNull { (key, raw) ->
+                    val optionKey = key?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                    val optionValue = raw?.toString()?.trim().orEmpty()
+                    if (optionValue.isEmpty()) optionKey else "$optionKey=$optionValue"
+                }
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(";")
+            else -> value.toString().trim().takeIf { it.isNotEmpty() }
+        }
     }
 
-    private fun hasUnsupportedHysteria2Feature(map: Map<*, *>): Boolean {
-        return stringValue(map, "obfs") != null ||
-            stringValue(map, "obfs-password") != null ||
-            stringValue(map, "obfs_password") != null
+    private fun canonicalizeJsonValue(value: Any?): String? {
+        return when (value) {
+            null -> null
+            is String -> value.trim().takeIf { it.isNotEmpty() }
+            is Map<*, *> -> {
+                val orderedKeys = value.keys
+                    .mapNotNull { it?.toString()?.trim()?.takeIf { key -> key.isNotEmpty() } }
+                    .sorted()
+                if (orderedKeys.isEmpty()) return null
+                val canonical = org.json.JSONObject()
+                orderedKeys.forEach { key ->
+                    canonical.put(key, value.entries.firstOrNull { it.key?.toString() == key }?.value)
+                }
+                canonical.toString()
+            }
+            else -> value.toString().trim().takeIf { it.isNotEmpty() }
+        }
+    }
+
+    private fun parseUdpOverTcp(value: Any?): Pair<Boolean?, Int?> {
+        return when (value) {
+            null -> null to null
+            is Boolean -> value to null
+            is Number -> true to value.toInt()
+            is String -> {
+                val normalized = value.trim().lowercase()
+                when {
+                    normalized.isEmpty() -> null to null
+                    normalized == "1" -> true to null
+                    normalized == "0" -> false to null
+                    normalized == "true" || normalized == "false" -> normalized.toBoolean() to null
+                    else -> true to normalized.toIntOrNull()
+                }
+            }
+            is Map<*, *> -> {
+                val enabled = value.entries.firstOrNull {
+                    it.key?.toString()?.equals("enabled", ignoreCase = true) == true
+                }?.value?.toString()?.toBooleanStrictOrNull() ?: true
+                val version = value.entries.firstOrNull {
+                    it.key?.toString()?.equals("version", ignoreCase = true) == true
+                }?.value?.toString()?.toIntOrNull()
+                enabled to version
+            }
+            else -> null to null
+        }
     }
 }

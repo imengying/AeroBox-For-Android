@@ -4,6 +4,8 @@ import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.ProxyType
 import com.aerobox.data.model.RoutingMode
+import com.aerobox.data.model.effectiveEnabledNetwork
+import com.aerobox.data.model.effectiveTransportType
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -224,12 +226,6 @@ object ConfigGenerator {
                         .put("server", DNS_DIRECT_TAG)
                 )
             }
-        dnsRules.put(
-            JSONObject()
-                .put("outbound", JSONArray().put("any"))
-                .put("action", "route")
-                .put("server", DNS_DIRECT_TAG)
-        )
 
         // Only add Geo-specific DNS routing rules for rule-based modes
         if (routingMode == RoutingMode.RULE_BASED) {
@@ -303,7 +299,7 @@ object ConfigGenerator {
                 trimmed.startsWith("https://") -> normalizeEncryptedDnsEndpoint(trimmed, "https")
                 trimmed.startsWith("tls://") -> normalizeEncryptedDnsEndpoint(trimmed, "tls")
                 trimmed.startsWith("quic://") -> normalizeEncryptedDnsEndpoint(trimmed, "quic")
-                isIpLiteral(trimmed) -> knownEncryptedDnsEndpoint(trimmed) ?: trimmed
+                isIpLiteral(trimmed) -> knownEncryptedDnsEndpoint(trimmed) ?: "tls://$trimmed"
                 else -> "tls://$trimmed"
             }
         }
@@ -362,7 +358,10 @@ object ConfigGenerator {
                         "$scheme://$mappedHost$portPart"
                     }
 
-                    isIpLiteral(host) -> host
+                    isIpLiteral(host) -> {
+                        val portPart = if (port != 853) ":$port" else ""
+                        "$scheme://$host$portPart"
+                    }
                     else -> value
                 }
             }
@@ -697,6 +696,8 @@ object ConfigGenerator {
 
     private fun buildProxyOutbound(node: ProxyNode): JSONObject {
         val cleanServer = normalizeOutboundServer(node.server)
+        val enabledNetwork = node.effectiveEnabledNetwork()
+        val transportType = node.effectiveTransportType()
         val outbound = JSONObject()
             .put("server", cleanServer.ifBlank { "127.0.0.1" })
             .put("server_port", node.port)
@@ -707,6 +708,12 @@ object ConfigGenerator {
                 outbound.put("type", "shadowsocks")
                 outbound.put("method", node.method ?: "aes-128-gcm")
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
+                node.plugin?.takeIf { it.isNotBlank() }?.let { outbound.put("plugin", it) }
+                node.pluginOpts?.takeIf { it.isNotBlank() }?.let { outbound.put("plugin_opts", it) }
+                enabledNetwork?.let { outbound.put("network", it) }
+                buildUdpOverTcp(node.udpOverTcpEnabled, node.udpOverTcpVersion)?.let {
+                    outbound.put("udp_over_tcp", it)
+                }
             }
 
             ProxyType.VMESS -> {
@@ -715,7 +722,10 @@ object ConfigGenerator {
                 outbound.put("security", node.security ?: "auto")
                 outbound.put("alter_id", node.alterId)
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
+                node.globalPadding?.let { outbound.put("global_padding", it) }
+                node.authenticatedLength?.let { outbound.put("authenticated_length", it) }
                 outbound.put("tls", buildTlsObject(node))
+                enabledNetwork?.let { outbound.put("network", it) }
             }
 
             ProxyType.VLESS -> {
@@ -724,6 +734,7 @@ object ConfigGenerator {
                 node.flow?.takeIf { it.isNotBlank() }?.let { outbound.put("flow", it) }
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node, includeReality = true))
+                enabledNetwork?.let { outbound.put("network", it) }
             }
 
             ProxyType.TROJAN -> {
@@ -731,12 +742,34 @@ object ConfigGenerator {
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
                 outbound.put("tls", buildTlsObject(node, includeReality = true))
+                enabledNetwork?.let { outbound.put("network", it) }
             }
 
             ProxyType.HYSTERIA2 -> {
                 outbound.put("type", "hysteria2")
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 outbound.put("tls", buildTlsObject(node))
+                enabledNetwork?.let { outbound.put("network", it) }
+                if (!node.obfsType.isNullOrBlank()) {
+                    val obfs = JSONObject()
+                        .put("type", node.obfsType)
+                    node.obfsPassword?.takeIf { it.isNotBlank() }?.let { obfs.put("password", it) }
+                    outbound.put("obfs", obfs)
+                }
+                node.serverPorts
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { ports ->
+                        outbound.remove("server_port")
+                        val portArray = JSONArray()
+                        ports.forEach { portArray.put(it) }
+                        outbound.put("server_ports", portArray)
+                    }
+                node.hopInterval?.takeIf { it.isNotBlank() }?.let { outbound.put("hop_interval", it) }
+                node.upMbps?.takeIf { it > 0 }?.let { outbound.put("up_mbps", it) }
+                node.downMbps?.takeIf { it > 0 }?.let { outbound.put("down_mbps", it) }
             }
 
             ProxyType.TUIC -> {
@@ -745,13 +778,22 @@ object ConfigGenerator {
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 node.congestionControl?.takeIf { it.isNotBlank() }?.let { outbound.put("congestion_control", it) }
                 node.udpRelayMode?.takeIf { it.isNotBlank() }?.let { outbound.put("udp_relay_mode", it) }
+                node.udpOverStream?.let { outbound.put("udp_over_stream", it) }
+                node.zeroRttHandshake?.let { outbound.put("zero_rtt_handshake", it) }
+                node.heartbeat?.takeIf { it.isNotBlank() }?.let { outbound.put("heartbeat", it) }
                 outbound.put("tls", buildTlsObject(node))
+                enabledNetwork?.let { outbound.put("network", it) }
             }
 
             ProxyType.SOCKS -> {
                 outbound.put("type", "socks")
                 node.username?.let { outbound.put("username", it) }
                 node.password?.let { outbound.put("password", it) }
+                node.socksVersion?.takeIf { it.isNotBlank() }?.let { outbound.put("version", it) }
+                enabledNetwork?.let { outbound.put("network", it) }
+                buildUdpOverTcp(node.udpOverTcpEnabled, node.udpOverTcpVersion)?.let {
+                    outbound.put("udp_over_tcp", it)
+                }
             }
 
             ProxyType.HTTP -> {
@@ -759,17 +801,25 @@ object ConfigGenerator {
                 node.username?.let { outbound.put("username", it) }
                 node.password?.let { outbound.put("password", it) }
                 if (node.tls) {
-                    outbound.put("tls", JSONObject().put("enabled", true))
+                    outbound.put("tls", buildTlsObject(node))
+                }
+                normalizedTransportPath(node.transportPath)?.let { outbound.put("path", it) }
+                mergeHeaderJson(node.httpHeaders, node.transportHost)?.let { headers ->
+                    outbound.put("headers", headers)
                 }
             }
         }
 
-        node.network?.let { network ->
-            if (network != "tcp" && network.isNotBlank()) {
-                outbound.put("transport", buildTransport(node))
-            }
+        applyDialFields(outbound, node)
+        transportType?.takeIf {
+            node.type == ProxyType.VMESS ||
+                node.type == ProxyType.VLESS ||
+                node.type == ProxyType.TROJAN
+        }?.let {
+            outbound.put("transport", buildTransport(node, it))
         }
-        if (!isIpLiteral(cleanServer)) {
+        applyMultiplex(outbound, node)
+        if (!outbound.has("domain_resolver") && !isIpLiteral(cleanServer)) {
             // Use domain_resolver (not domain_strategy) so that only the proxy
             // SERVER address is resolved locally.  domain_strategy would also
             // resolve the destination domain locally and send the IP instead of
@@ -782,6 +832,66 @@ object ConfigGenerator {
             )
         }
         return outbound
+    }
+
+    private fun applyDialFields(outbound: JSONObject, node: ProxyNode) {
+        node.detour?.takeIf { it.isNotBlank() }?.let { outbound.put("detour", it) }
+        node.bindInterface?.takeIf { it.isNotBlank() }?.let { outbound.put("bind_interface", it) }
+        node.inet4BindAddress?.takeIf { it.isNotBlank() }?.let { outbound.put("inet4_bind_address", it) }
+        node.inet6BindAddress?.takeIf { it.isNotBlank() }?.let { outbound.put("inet6_bind_address", it) }
+        node.bindAddressNoPort?.let { outbound.put("bind_address_no_port", it) }
+        node.routingMark?.takeIf { it.isNotBlank() }?.let { value ->
+            outbound.put("routing_mark", value.toLongOrNull() ?: value)
+        }
+        node.reuseAddr?.let { outbound.put("reuse_addr", it) }
+        node.netns?.takeIf { it.isNotBlank() }?.let { outbound.put("netns", it) }
+        node.connectTimeout?.takeIf { it.isNotBlank() }?.let { outbound.put("connect_timeout", it) }
+        node.tcpFastOpen?.let { outbound.put("tcp_fast_open", it) }
+        node.tcpMultiPath?.let { outbound.put("tcp_multi_path", it) }
+        node.disableTcpKeepAlive?.let { outbound.put("disable_tcp_keep_alive", it) }
+        node.tcpKeepAlive?.takeIf { it.isNotBlank() }?.let { outbound.put("tcp_keep_alive", it) }
+        node.tcpKeepAliveInterval?.takeIf { it.isNotBlank() }?.let { outbound.put("tcp_keep_alive_interval", it) }
+        node.udpFragment?.let { outbound.put("udp_fragment", it) }
+        parseJsonValue(node.domainResolver)?.let { outbound.put("domain_resolver", it) }
+        node.networkStrategy?.takeIf { it.isNotBlank() }?.let { outbound.put("network_strategy", it) }
+        csvToJsonArray(node.networkType)?.let { outbound.put("network_type", it) }
+        csvToJsonArray(node.fallbackNetworkType)?.let { outbound.put("fallback_network_type", it) }
+        node.fallbackDelay?.takeIf { it.isNotBlank() }?.let { outbound.put("fallback_delay", it) }
+        node.domainStrategy?.takeIf { it.isNotBlank() }?.let { outbound.put("domain_strategy", it) }
+    }
+
+    private fun applyMultiplex(outbound: JSONObject, node: ProxyNode) {
+        val hasMuxSettings = node.muxEnabled != null ||
+            !node.muxProtocol.isNullOrBlank() ||
+            node.muxMaxConnections != null ||
+            node.muxMinStreams != null ||
+            node.muxMaxStreams != null ||
+            node.muxPadding != null ||
+            node.muxBrutalEnabled != null ||
+            node.muxBrutalUpMbps != null ||
+            node.muxBrutalDownMbps != null
+        if (!hasMuxSettings) return
+
+        val multiplex = JSONObject()
+        multiplex.put("enabled", node.muxEnabled ?: true)
+        node.muxProtocol?.takeIf { it.isNotBlank() }?.let { multiplex.put("protocol", it) }
+        node.muxMaxConnections?.let { multiplex.put("max_connections", it) }
+        node.muxMinStreams?.let { multiplex.put("min_streams", it) }
+        node.muxMaxStreams?.let { multiplex.put("max_streams", it) }
+        node.muxPadding?.let { multiplex.put("padding", it) }
+
+        val hasBrutal = node.muxBrutalEnabled != null ||
+            node.muxBrutalUpMbps != null ||
+            node.muxBrutalDownMbps != null
+        if (hasBrutal) {
+            val brutal = JSONObject()
+            brutal.put("enabled", node.muxBrutalEnabled ?: true)
+            node.muxBrutalUpMbps?.let { brutal.put("up_mbps", it) }
+            node.muxBrutalDownMbps?.let { brutal.put("down_mbps", it) }
+            multiplex.put("brutal", brutal)
+        }
+
+        outbound.put("multiplex", multiplex)
     }
 
     private fun normalizeOutboundServer(server: String): String {
@@ -855,18 +965,33 @@ object ConfigGenerator {
 
     // ── Transport ───────────────────────────────────────────────────
 
-    private fun buildTransport(node: ProxyNode): JSONObject {
+    private fun buildTransport(node: ProxyNode, transportType: String): JSONObject {
         val transport = JSONObject()
-        when (node.network?.lowercase()) {
+        when (transportType.lowercase()) {
             "ws", "websocket" -> {
                 transport.put("type", "ws")
                 normalizedTransportPath(node.transportPath)?.let { transport.put("path", it) }
-                firstTransportHost(node)?.let { transport.put("headers", JSONObject().put("Host", it)) }
+                mergeHeaderJson(node.transportHeaders, firstTransportHost(node))?.let {
+                    transport.put("headers", it)
+                }
+                node.wsMaxEarlyData?.let { transport.put("max_early_data", it) }
+                node.wsEarlyDataHeaderName?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("early_data_header_name", it)
+                }
             }
             "grpc" -> {
                 transport.put("type", "grpc")
                 node.transportServiceName?.takeIf { it.isNotBlank() }?.let {
                     transport.put("service_name", it)
+                }
+                node.transportIdleTimeout?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("idle_timeout", it)
+                }
+                node.transportPingTimeout?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("ping_timeout", it)
+                }
+                node.transportPermitWithoutStream?.let {
+                    transport.put("permit_without_stream", it)
                 }
             }
             "h2", "http" -> {
@@ -882,14 +1007,76 @@ object ConfigGenerator {
                         transport.put("host", hostArray)
                     }
                 }
+                node.transportMethod?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("method", it)
+                }
+                parseJsonObject(node.transportHeaders)?.takeIf { it.length() > 0 }?.let {
+                    transport.put("headers", it)
+                }
+                node.transportIdleTimeout?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("idle_timeout", it)
+                }
+                node.transportPingTimeout?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("ping_timeout", it)
+                }
             }
             "httpupgrade", "http-upgrade" -> {
                 transport.put("type", "httpupgrade")
                 normalizedTransportPath(node.transportPath)?.let { transport.put("path", it) }
                 firstTransportHost(node)?.let { transport.put("host", it) }
+                parseJsonObject(node.transportHeaders)?.takeIf { it.length() > 0 }?.let {
+                    transport.put("headers", it)
+                }
+            }
+            "quic" -> {
+                transport.put("type", "quic")
             }
         }
         return transport
+    }
+
+    private fun buildUdpOverTcp(enabled: Boolean?, version: Int?): Any? {
+        if (enabled == null && version == null) return null
+        if (version != null) {
+            return JSONObject()
+                .put("enabled", enabled ?: true)
+                .put("version", version)
+        }
+        return enabled
+    }
+
+    private fun csvToJsonArray(value: String?): JSONArray? {
+        val normalized = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val items = normalized
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (items.isEmpty()) return null
+        return JSONArray().apply {
+            items.forEach(::put)
+        }
+    }
+
+    private fun parseJsonValue(raw: String?): Any? {
+        val normalized = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return when {
+            normalized.startsWith("{") -> runCatching { JSONObject(normalized) }.getOrNull()
+            normalized.startsWith("[") -> runCatching { JSONArray(normalized) }.getOrNull()
+            normalized == "true" || normalized == "false" -> normalized.toBoolean()
+            normalized.toLongOrNull() != null -> normalized.toLong()
+            else -> normalized
+        }
+    }
+
+    private fun parseJsonObject(raw: String?): JSONObject? {
+        val text = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { JSONObject(text) }.getOrNull()
+    }
+
+    private fun mergeHeaderJson(raw: String?, host: String?): JSONObject? {
+        val headers = parseJsonObject(raw) ?: JSONObject()
+        host?.takeIf { it.isNotBlank() }?.let { headers.put("Host", it) }
+        return headers.takeIf { it.length() > 0 }
     }
 
     private fun firstTransportHost(node: ProxyNode): String? {
