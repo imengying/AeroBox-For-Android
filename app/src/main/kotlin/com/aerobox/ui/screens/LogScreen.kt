@@ -1,5 +1,8 @@
 package com.aerobox.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,12 +14,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -26,25 +31,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aerobox.ui.components.AppSnackbarHost
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.logging.RuntimeLogEntry
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val logLines by RuntimeLogBuffer.lines.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // Auto-scroll to bottom only when user is already near the bottom
     LaunchedEffect(logLines.size) {
@@ -58,6 +70,9 @@ fun LogScreen(
     }
 
     Scaffold(
+        snackbarHost = {
+            AppSnackbarHost(hostState = snackbarHostState)
+        },
         topBar = {
             TopAppBar(
                 title = { Text("运行日志") },
@@ -67,6 +82,17 @@ fun LogScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            copyAllLogEntries(context, logLines)
+                            scope.launch {
+                                snackbarHostState.showSnackbar("日志已复制")
+                            }
+                        },
+                        enabled = logLines.isNotEmpty()
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = "复制全部日志")
+                    }
                     IconButton(onClick = { RuntimeLogBuffer.clear() }) {
                         Icon(Icons.Filled.Delete, contentDescription = "清空日志")
                     }
@@ -99,7 +125,7 @@ fun LogScreen(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(logLines) { entry ->
-                    LogEntryRow(entry)
+                    LogEntryRow(entry = entry)
                 }
             }
         }
@@ -133,5 +159,29 @@ private fun LogEntryRow(entry: RuntimeLogEntry) {
             color = levelColor,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         )
+    }
+}
+
+private fun copyAllLogEntries(context: Context, entries: List<RuntimeLogEntry>) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    // Keep the same order as the current UI: oldest at top, newest at bottom.
+    val text = entries.joinToString(separator = "\n") { entry ->
+        "${copyTimestamp(entry.timestamp)} [${entry.level}] ${entry.message}"
+    }
+    clipboard.setPrimaryClip(
+        ClipData.newPlainText(
+            "runtime-log",
+            text
+        )
+    )
+}
+
+private fun copyTimestamp(timestamp: Long): String {
+    return COPY_TIME_FORMAT.get().format(Date(timestamp))
+}
+
+private val COPY_TIME_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue(): SimpleDateFormat {
+        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     }
 }

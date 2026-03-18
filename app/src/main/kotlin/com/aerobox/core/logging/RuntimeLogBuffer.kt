@@ -95,11 +95,60 @@ object RuntimeLogBuffer {
     private fun sanitize(message: String): String {
         if (message.isBlank()) return message
         return message
-            .replace(urlRegex, "[url]")
-            .replace(uuidRegex, "[uuid]")
-            .replace(bracketIpv6Regex, "[ipv6]")
-            .replace(ipv4PortRegex, "[ipv4]")
-            .replace(hostPortRegex, "[host]")
+            .replace(urlRegex) { maskUrl(it.value) }
+            .replace(uuidRegex) { maskUuid(it.value) }
+            .replace(bracketIpv6Regex) { maskBracketIpv6(it.value) }
+            .replace(ipv4PortRegex) { maskIpv4(it.value) }
+            .replace(hostPortRegex) { maskHost(it.value) }
+    }
+
+    /** `https://sub.example.com/path?k=v` → `https://sub.exa***.com/***` */
+    private fun maskUrl(url: String): String {
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd < 0) return "[url]"
+        val scheme = url.substring(0, schemeEnd + 3) // "https://"
+        val rest = url.substring(schemeEnd + 3)
+        val pathStart = rest.indexOf('/')
+        val host = if (pathStart >= 0) rest.substring(0, pathStart) else rest
+        return "${scheme}${maskHost(host)}/***"
+    }
+
+    /** `550e8400-e29b-41d4-a716-446655440000` → `550e****` */
+    private fun maskUuid(uuid: String): String {
+        return if (uuid.length >= 4) "${uuid.substring(0, 4)}****" else "****"
+    }
+
+    /** `[2001:db8::1]:443` → `[2001:db8:*]:443` */
+    private fun maskBracketIpv6(raw: String): String {
+        val closeBracket = raw.indexOf(']')
+        if (closeBracket < 0) return "[ipv6]"
+        val addr = raw.substring(1, closeBracket) // strip [ ]
+        val port = if (closeBracket + 1 < raw.length) raw.substring(closeBracket + 1) else ""
+        val prefix = addr.split(':').take(2).joinToString(":")
+        return "[${prefix}:*]$port"
+    }
+
+    /** `1.2.3.4:443` → `1.2.*.*:443` */
+    private fun maskIpv4(raw: String): String {
+        val colonIdx = raw.indexOf(':')
+        val ip = if (colonIdx >= 0) raw.substring(0, colonIdx) else raw
+        val port = if (colonIdx >= 0) raw.substring(colonIdx) else ""
+        val parts = ip.split('.')
+        return if (parts.size == 4) "${parts[0]}.${parts[1]}.*.*$port" else "[ipv4]$port"
+    }
+
+    /** `us-east.server.example.com:443` → `us-east.ser***.com:443` */
+    private fun maskHost(raw: String): String {
+        val colonIdx = raw.indexOf(':')
+        val host = if (colonIdx >= 0) raw.substring(0, colonIdx) else raw
+        val port = if (colonIdx >= 0) raw.substring(colonIdx) else ""
+        val labels = host.split('.')
+        if (labels.size < 2) return "$host$port"
+        val tld = labels.last()
+        val sld = labels[labels.size - 2]
+        val maskedSld = if (sld.length > 3) "${sld.substring(0, 3)}***" else "${sld}***"
+        val prefix = if (labels.size > 2) labels.subList(0, labels.size - 2).joinToString(".") + "." else ""
+        return "$prefix$maskedSld.$tld$port"
     }
 
     private val DATE_FORMAT = object : ThreadLocal<SimpleDateFormat>() {

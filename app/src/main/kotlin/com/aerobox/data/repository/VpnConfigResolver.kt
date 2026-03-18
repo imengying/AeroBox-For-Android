@@ -5,7 +5,6 @@ import android.util.Log
 import com.aerobox.AeroBoxApplication
 import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.core.geo.GeoAssetManager
-import com.aerobox.core.logging.ConfigSnapshotWriter
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.native.SingBoxNative
 import com.aerobox.data.model.ProxyNode
@@ -61,7 +60,7 @@ class VpnConfigResolver(private val context: Context) {
     suspend fun buildConfig(node: ProxyNode): String {
         val nodeName = node.name.ifBlank { "unnamed node" }
         Log.w(TAG, "Generating config for $nodeName [${node.type.name}]")
-        RuntimeLogBuffer.append("info", "Generating config for $nodeName")
+        RuntimeLogBuffer.append("info", "Generating config for $nodeName [${node.type.name}]")
         withContext(Dispatchers.IO) {
             GeoAssetManager.ensureBundledAssets(context)
         }
@@ -108,12 +107,6 @@ class VpnConfigResolver(private val context: Context) {
             geoIpCnRuleSetPath = geoIpCnRuleSetPath,
             geoSiteCnRuleSetPath = geoSiteCnRuleSetPath,
             geoSiteAdsRuleSetPath = geoSiteAdsRuleSetPath
-        )
-        ConfigSnapshotWriter.writeCurrentConfig(
-            context = context,
-            node = node,
-            config = config,
-            source = "vpn"
         )
         return config
     }
