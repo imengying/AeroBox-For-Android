@@ -28,7 +28,7 @@ data class ParsedSubscription(
 
 object SubscriptionParser {
     private const val TAG = "SubscriptionParser"
-    private val supportedTransportNetworks = setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade")
+    internal val supportedTransportNetworks = setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade")
 
     private val trafficInfoPrefixes = listOf(
         "剩余流量",
@@ -555,6 +555,9 @@ object SubscriptionParser {
         val network = resolveTransportNetwork(rawNetwork)
         if (rawNetwork != null && network == null) return null
 
+        val security = params["security"]?.lowercase()
+        val isReality = security == "reality"
+
         return ProxyNode(
             name = decodeName(parsed.fragment ?: "Trojan"),
             type = ProxyType.TROJAN,
@@ -577,6 +580,8 @@ object SubscriptionParser {
             ),
             alpn = params["alpn"],
             fingerprint = firstNonBlank(params["fp"], params["fingerprint"]),
+            publicKey = if (isReality) firstNonBlank(params["pbk"], params["public-key"]) else null,
+            shortId = if (isReality) firstNonBlank(params["sid"], params["short-id"]) else null,
             packetEncoding = firstNonBlank(
                 params["packetEncoding"],
                 params["packet-encoding"],
@@ -639,6 +644,14 @@ object SubscriptionParser {
             tls = true,
             sni = params["sni"],
             alpn = params["alpn"],
+            congestionControl = firstNonBlank(
+                params["congestion_control"],
+                params["congestion-control"]
+            ),
+            udpRelayMode = firstNonBlank(
+                params["udp_relay_mode"],
+                params["udp-relay-mode"]
+            ),
             allowInsecure = parseBooleanField(
                 params["allowInsecure"],
                 params["insecure"]

@@ -48,6 +48,8 @@ fun ProxyNode.connectionFingerprint(includeName: Boolean = true): String {
         add(packetEncoding.normalizedIdentityValue())
         add(username.normalizedIdentityValue())
         add(allowInsecure.toString())
+        add(congestionControl.normalizedIdentityValue())
+        add(udpRelayMode.normalizedIdentityValue())
     }.joinToString("|")
 }
 

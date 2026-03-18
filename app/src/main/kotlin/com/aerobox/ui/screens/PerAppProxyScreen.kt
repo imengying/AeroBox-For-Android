@@ -100,24 +100,37 @@ fun PerAppProxyScreen(
     val selectedPackages by viewModel.perAppProxyPackages.collectAsStateWithLifecycle()
     val apps by viewModel.installedApps.collectAsStateWithLifecycle()
     val isLoadingApps by viewModel.isLoadingInstalledApps.collectAsStateWithLifecycle()
-    var showSystem by remember { mutableStateOf(false) }
+    val showSystem by viewModel.perAppShowSystem.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
+    var pendingShowSystem by remember { mutableStateOf<Boolean?>(null) }
+    val effectiveShowSystem = pendingShowSystem ?: showSystem
 
     // Snapshot selected packages at screen open for stable sort order.
     // Selecting/deselecting an app won't cause it to jump in the list.
-    val initialSelectedPackages = remember { selectedPackages }
+    var initialSelectedPackages by remember { mutableStateOf<Set<String>?>(null) }
+    LaunchedEffect(isLoadingApps, selectedPackages) {
+        if (initialSelectedPackages == null && !isLoadingApps) {
+            initialSelectedPackages = selectedPackages
+        }
+    }
+    LaunchedEffect(showSystem) {
+        if (pendingShowSystem == showSystem) {
+            pendingShowSystem = null
+        }
+    }
+    val stableSelectedPackages = initialSelectedPackages ?: selectedPackages
 
     LaunchedEffect(Unit) {
         viewModel.loadInstalledApps()
     }
 
-    val filteredApps = remember(apps, showSystem, searchQuery, selectedPackages, initialSelectedPackages) {
+    val filteredApps = remember(apps, effectiveShowSystem, searchQuery, selectedPackages, stableSelectedPackages) {
         apps
             .asSequence()
             .filter { app ->
                 // Always show selected apps (even system apps) so they don't disappear
                 if (selectedPackages.contains(app.packageName)) return@filter true
-                if (!showSystem && app.isSystem) return@filter false
+                if (!effectiveShowSystem && app.isSystem) return@filter false
                 true
             }
             .filter { app ->
@@ -131,7 +144,7 @@ fun PerAppProxyScreen(
             }
             .sortedWith(
                 compareByDescending<InstalledAppInfo> {
-                    initialSelectedPackages.contains(it.packageName)
+                    stableSelectedPackages.contains(it.packageName)
                 }.thenBy { it.label.lowercase() }
             )
             .toList()
@@ -176,8 +189,12 @@ fun PerAppProxyScreen(
                     label = { Text("仅代理选中") }
                 )
                 FilterChip(
-                    selected = showSystem,
-                    onClick = { showSystem = !showSystem },
+                    selected = effectiveShowSystem,
+                    onClick = {
+                        val next = !effectiveShowSystem
+                        pendingShowSystem = next
+                        scope.launch { viewModel.setPerAppShowSystem(next) }
+                    },
                     label = { Text("显示系统") }
                 )
             }
@@ -242,6 +259,9 @@ fun PerAppProxyScreen(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                         )
                         val toggleSelection = {
+                            if (initialSelectedPackages == null) {
+                                initialSelectedPackages = selectedPackages
+                            }
                             val updated = if (!isChecked) {
                                 selectedPackages + app.packageName
                             } else {

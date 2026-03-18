@@ -65,6 +65,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val perAppProxyPackages: StateFlow<Set<String>> = PreferenceManager.perAppProxyPackagesFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    val perAppShowSystem: StateFlow<Boolean> = PreferenceManager.perAppShowSystemFlow(appContext)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val enableSocksInbound: StateFlow<Boolean> = PreferenceManager.enableSocksInboundFlow(appContext)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -126,6 +129,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     suspend fun setPerAppProxyPackages(packages: Set<String>) {
         PreferenceManager.setPerAppProxyPackages(appContext, packages)
+    }
+
+    suspend fun setPerAppShowSystem(show: Boolean) {
+        PreferenceManager.setPerAppShowSystem(appContext, show)
     }
 
     suspend fun setEnableSocksInbound(enabled: Boolean) {

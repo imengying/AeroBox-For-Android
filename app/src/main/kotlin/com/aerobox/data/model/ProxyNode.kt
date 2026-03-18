@@ -66,5 +66,8 @@ data class ProxyNode(
     val createdAt: Long = System.currentTimeMillis(),
     // SOCKS/HTTP auth
     val username: String? = null,
-    val allowInsecure: Boolean = false
+    val allowInsecure: Boolean = false,
+    // TUIC-specific
+    val congestionControl: String? = null,
+    val udpRelayMode: String? = null
 )

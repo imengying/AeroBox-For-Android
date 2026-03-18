@@ -40,6 +40,7 @@ object PreferenceManager {
     private val ENABLE_GEO_CN_IP_RULE = booleanPreferencesKey("enable_geo_cn_ip_rule")
     private val ENABLE_GEO_ADS_BLOCK = booleanPreferencesKey("enable_geo_ads_block")
     private val ENABLE_GEO_BLOCK_QUIC = booleanPreferencesKey("enable_geo_block_quic")
+    private val PER_APP_SHOW_SYSTEM = booleanPreferencesKey("per_app_show_system")
 
     // ── Existing settings ──
 
@@ -79,6 +80,9 @@ object PreferenceManager {
 
     fun perAppProxyPackagesFlow(context: Context): Flow<Set<String>> =
         context.dataStore.data.map { it[PER_APP_PROXY_PACKAGES] ?: emptySet() }
+
+    fun perAppShowSystemFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[PER_APP_SHOW_SYSTEM] ?: false }
 
     fun enableSocksInboundFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[ENABLE_SOCKS_INBOUND] ?: false }
@@ -164,6 +168,10 @@ object PreferenceManager {
 
     suspend fun setPerAppProxyPackages(context: Context, packages: Set<String>) {
         context.dataStore.edit { it[PER_APP_PROXY_PACKAGES] = packages }
+    }
+
+    suspend fun setPerAppShowSystem(context: Context, show: Boolean) {
+        context.dataStore.edit { it[PER_APP_SHOW_SYSTEM] = show }
     }
 
     suspend fun setEnableSocksInbound(context: Context, enabled: Boolean) {

@@ -3,21 +3,15 @@ package com.aerobox.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -32,14 +26,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.ui.components.AppSnackbarHost
+import com.aerobox.ui.components.SectionHeader
+import com.aerobox.ui.components.SettingItem
 import com.aerobox.ui.icons.AppIcons
 import com.aerobox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -85,9 +79,9 @@ fun RoutingSettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item { RoutingSectionHeader(title = "规则") }
+            item { SectionHeader(title = "规则") }
             item {
-                RoutingSettingItem(
+                SettingItem(
                     icon = { Icon(AppIcons.Security, contentDescription = null) },
                     title = "规则",
                     supporting = if (enableGeoRules) {
@@ -105,7 +99,7 @@ fun RoutingSettingsScreen(
             }
             if (enableGeoRules) {
                 item {
-                    RoutingSettingItem(
+                    SettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "屏蔽 QUIC",
                         supporting = "network: udp + port: 443",
@@ -118,7 +112,7 @@ fun RoutingSettingsScreen(
                     )
                 }
                 item {
-                    RoutingSettingItem(
+                    SettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "中国域名规则",
                         supporting = "rule_set: geosite-cn",
@@ -131,7 +125,7 @@ fun RoutingSettingsScreen(
                     )
                 }
                 item {
-                    RoutingSettingItem(
+                    SettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "中国 IP 规则",
                         supporting = "rule_set: geoip-cn",
@@ -144,7 +138,7 @@ fun RoutingSettingsScreen(
                     )
                 }
                 item {
-                    RoutingSettingItem(
+                    SettingItem(
                         icon = { Icon(AppIcons.Security, contentDescription = null) },
                         title = "屏蔽广告",
                         supporting = "rule_set: geosite-category-ads-all",
@@ -158,13 +152,13 @@ fun RoutingSettingsScreen(
                 }
             }
 
-            item { RoutingSectionHeader(title = "资源") }
+            item { SectionHeader(title = "资源") }
             item {
                 val hasFiles = GeoAssetManager.hasLocalFiles(context)
                 val geoIpSize = GeoAssetManager.getGeoIpSize(context)
                 val geoSiteSize = GeoAssetManager.getGeoSiteSize(context)
                 val geoAdsSize = GeoAssetManager.getGeoAdsSize(context)
-                RoutingSettingItem(
+                SettingItem(
                     onClick = {
                         if (!geoUpdating) {
                             geoUpdating = true
@@ -196,93 +190,6 @@ fun RoutingSettingsScreen(
                     }
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun RoutingSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Black,
-        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 8.dp)
-    )
-}
-
-@Composable
-private fun RoutingSettingItem(
-    icon: @Composable () -> Unit,
-    title: String,
-    supporting: String,
-    trailing: @Composable () -> Unit,
-    onClick: (() -> Unit)? = null,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(16.dp)
-    val colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    )
-
-    if (onClick != null) {
-        Card(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors
-        ) {
-            ListItem(
-                leadingContent = icon,
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = trailing,
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                )
-            )
-        }
-    } else {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors
-        ) {
-            ListItem(
-                leadingContent = icon,
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = trailing,
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                )
-            )
         }
     }
 }

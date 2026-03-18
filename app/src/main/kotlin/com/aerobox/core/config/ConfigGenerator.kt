@@ -500,9 +500,6 @@ object ConfigGenerator {
             .put("mtu", 1280)
             .put("auto_route", true)
             .put("stack", "system")
-            .put("domain_strategy", ipv6Mode.domainStrategy())
-            .put("sniff", true)
-            .put("sniff_override_destination", true)
 
         inbounds.put(tunInbound)
 
@@ -514,9 +511,6 @@ object ConfigGenerator {
                     .put("tag", "socks-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2080)
-                    .put("domain_strategy", ipv6Mode.domainStrategy())
-                    .put("sniff", true)
-                    .put("sniff_override_destination", true)
             )
         }
 
@@ -528,9 +522,6 @@ object ConfigGenerator {
                     .put("tag", "http-in")
                     .put("listen", inboundListen)
                     .put("listen_port", 2081)
-                    .put("domain_strategy", ipv6Mode.domainStrategy())
-                    .put("sniff", true)
-                    .put("sniff_override_destination", true)
             )
         }
 
@@ -573,13 +564,13 @@ object ConfigGenerator {
                 route.put("final", "proxy")
                 route.put(
                     "rules",
-                    buildBaseRouteRules()
+                    buildBaseRouteRules(ipv6Mode)
                 )
             }
 
             RoutingMode.RULE_BASED -> {
                 route.put("final", "proxy")
-                val rules = buildBaseRouteRules()
+                val rules = buildBaseRouteRules(ipv6Mode)
 
                 if (enableGeoBlockQuic) {
                     rules.put(
@@ -626,7 +617,7 @@ object ConfigGenerator {
                 route.put("final", "direct")
                 route.put(
                     "rules",
-                    buildBaseRouteRules()
+                    buildBaseRouteRules(ipv6Mode)
                 )
             }
 
@@ -643,8 +634,16 @@ object ConfigGenerator {
             .put("path", path)
     }
 
-    private fun buildBaseRouteRules(): JSONArray {
+    private fun buildBaseRouteRules(ipv6Mode: IPv6Mode): JSONArray {
         return JSONArray()
+            // sniff + resolve replace the deprecated inbound-level
+            // sniff / sniff_override_destination / domain_strategy fields.
+            .put(JSONObject().put("action", "sniff"))
+            .put(
+                JSONObject()
+                    .put("action", "resolve")
+                    .put("strategy", ipv6Mode.domainStrategy())
+            )
             .put(
                 JSONObject()
                     .put("port", JSONArray().put(53))
@@ -731,7 +730,7 @@ object ConfigGenerator {
                 outbound.put("type", "trojan")
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
                 node.packetEncoding?.takeIf { it.isNotBlank() }?.let { outbound.put("packet_encoding", it) }
-                outbound.put("tls", buildTlsObject(node))
+                outbound.put("tls", buildTlsObject(node, includeReality = true))
             }
 
             ProxyType.HYSTERIA2 -> {
@@ -744,6 +743,8 @@ object ConfigGenerator {
                 outbound.put("type", "tuic")
                 node.uuid?.takeIf { it.isNotBlank() }?.let { outbound.put("uuid", it) }
                 node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
+                node.congestionControl?.takeIf { it.isNotBlank() }?.let { outbound.put("congestion_control", it) }
+                node.udpRelayMode?.takeIf { it.isNotBlank() }?.let { outbound.put("udp_relay_mode", it) }
                 outbound.put("tls", buildTlsObject(node))
             }
 

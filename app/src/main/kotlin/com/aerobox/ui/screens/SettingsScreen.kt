@@ -23,7 +23,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -41,13 +40,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.R
 import com.aerobox.data.model.IPv6Mode
 import com.aerobox.ui.components.AppSnackbarHost
+import com.aerobox.ui.components.SectionHeader
+import com.aerobox.ui.components.SettingItem
 import com.aerobox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -385,91 +385,4 @@ private fun DnsSettingsDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
-}
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Black,
-        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 8.dp)
-    )
-}
-
-@Composable
-private fun SettingItem(
-    icon: @Composable () -> Unit,
-    title: String,
-    supporting: String,
-    trailing: @Composable () -> Unit,
-    onClick: (() -> Unit)? = null,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-    val colors = androidx.compose.material3.CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    )
-
-    if (onClick != null) {
-        Card(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors
-        ) {
-            ListItem(
-                leadingContent = icon,
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = trailing,
-                colors = androidx.compose.material3.ListItemDefaults.colors(
-                    containerColor = androidx.compose.ui.graphics.Color.Transparent
-                )
-            )
-        }
-    } else {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors
-        ) {
-            ListItem(
-                leadingContent = icon,
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = trailing,
-                colors = androidx.compose.material3.ListItemDefaults.colors(
-                    containerColor = androidx.compose.ui.graphics.Color.Transparent
-                )
-            )
-        }
-    }
 }

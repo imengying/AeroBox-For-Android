@@ -11,7 +11,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor
  * Only reads the `proxies:` list and maps each node into the app's internal model.
  */
 object ClashParser {
-    private val supportedTransportNetworks = setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade")
+    private val supportedTransportNetworks get() = SubscriptionParser.supportedTransportNetworks
 
     fun parseClashYaml(content: String): List<ProxyNode> {
         val root = loadYamlRoot(content) ?: return emptyList()
@@ -188,7 +188,16 @@ object ClashParser {
                 stringValue(map, "packet_encoding")
             ),
             username = stringValue(map, "username"),
-            allowInsecure = insecure
+            allowInsecure = insecure,
+            congestionControl = firstNonBlank(
+                stringValue(map, "congestion-controller"),
+                stringValue(map, "congestion_control"),
+                stringValue(map, "congestion-control")
+            ),
+            udpRelayMode = firstNonBlank(
+                stringValue(map, "udp-relay-mode"),
+                stringValue(map, "udp_relay_mode")
+            )
         )
     }
 
