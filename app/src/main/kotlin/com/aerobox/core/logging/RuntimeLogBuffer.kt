@@ -102,7 +102,7 @@ object RuntimeLogBuffer {
             .replace(hostPortRegex) { maskHost(it.value) }
     }
 
-    /** `https://sub.example.com/path?k=v` → `https://sub.exa***.com/***` */
+    // Example: https://sub.example.com/path?k=v -> https://sub.exa***.com/[path]
     private fun maskUrl(url: String): String {
         val schemeEnd = url.indexOf("://")
         if (schemeEnd < 0) return "[url]"
@@ -113,12 +113,12 @@ object RuntimeLogBuffer {
         return "${scheme}${maskHost(host)}/***"
     }
 
-    /** `550e8400-e29b-41d4-a716-446655440000` → `550e****` */
+    // Example: 550e8400-e29b-41d4-a716-446655440000 -> 550e****
     private fun maskUuid(uuid: String): String {
         return if (uuid.length >= 4) "${uuid.substring(0, 4)}****" else "****"
     }
 
-    /** `[2001:db8::1]:443` → `[2001:db8:*]:443` */
+    // Example: [2001:db8::1]:443 -> [2001:db8:*]:443
     private fun maskBracketIpv6(raw: String): String {
         val closeBracket = raw.indexOf(']')
         if (closeBracket < 0) return "[ipv6]"
@@ -128,7 +128,7 @@ object RuntimeLogBuffer {
         return "[${prefix}:*]$port"
     }
 
-    /** `1.2.3.4:443` → `1.2.*.*:443` */
+    // Example: 1.2.3.4:443 -> 1.2.*.*:443
     private fun maskIpv4(raw: String): String {
         val colonIdx = raw.indexOf(':')
         val ip = if (colonIdx >= 0) raw.substring(0, colonIdx) else raw
@@ -137,7 +137,7 @@ object RuntimeLogBuffer {
         return if (parts.size == 4) "${parts[0]}.${parts[1]}.*.*$port" else "[ipv4]$port"
     }
 
-    /** `us-east.server.example.com:443` → `us-east.ser***.com:443` */
+    // Example: us-east.server.example.com:443 -> us-east.ser***.com:443
     private fun maskHost(raw: String): String {
         val colonIdx = raw.indexOf(':')
         val host = if (colonIdx >= 0) raw.substring(0, colonIdx) else raw
