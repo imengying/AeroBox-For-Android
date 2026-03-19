@@ -872,7 +872,7 @@ object ConfigGenerator {
     private fun destinationDomainStrategy(nodeIsIpv6Only: Boolean): String {
         return when {
             nodeIsIpv6Only -> "prefer_ipv6"
-            else -> "ipv4_only"
+            else -> "prefer_ipv4"
         }
     }
 
