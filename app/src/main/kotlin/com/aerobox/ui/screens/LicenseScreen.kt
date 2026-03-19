@@ -1,13 +1,17 @@
 package com.aerobox.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -28,11 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aerobox.R
 import com.aerobox.ui.components.SectionHeader
@@ -80,12 +86,12 @@ fun LicenseScreen(
     ) { innerPadding ->
         when (val current = notices) {
             null -> {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .padding(24.dp),
-                    verticalArrangement = Arrangement.Center
+                    contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
@@ -156,7 +162,9 @@ private fun LicenseNoticeCard(
                 Text(
                     text = notice.summary,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Text(
@@ -165,13 +173,20 @@ private fun LicenseNoticeCard(
                 color = MaterialTheme.colorScheme.primary
             )
             if (expanded) {
-                Text(
-                    text = notice.body,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                ) {
+                    Text(
+                        text = notice.body,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                }
             } else {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
