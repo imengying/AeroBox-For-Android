@@ -116,6 +116,7 @@ jobs:
           EXTRA_ARGS=(
             "-PAEROBOX_VERSION_NAME=${AEROBOX_VERSION_NAME}"
             "-PAEROBOX_VERSION_CODE=${AEROBOX_VERSION_CODE}"
+            "-PAEROBOX_ABIS=arm64-v8a"
           )
           gradle --stacktrace :app:assembleRelease "${EXTRA_ARGS[@]}"
 

@@ -12,6 +12,12 @@ android {
     val ciVersionName = (project.findProperty("AEROBOX_VERSION_NAME") as? String)?.trim()
     val ciVersionCode = (project.findProperty("AEROBOX_VERSION_CODE") as? String)
         ?.toIntOrNull()
+    val configuredAbis = ((project.findProperty("AEROBOX_ABIS") as? String)
+        ?.split(',')
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() })
+        ?.takeIf { it.isNotEmpty() }
+        ?: listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
 
     defaultConfig {
         applicationId = "com.aerobox"
@@ -51,7 +57,7 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include(*configuredAbis.toTypedArray())
             isUniversalApk = false
         }
     }
