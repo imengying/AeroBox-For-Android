@@ -177,7 +177,9 @@ private fun copyAllLogEntries(context: Context, entries: List<RuntimeLogEntry>) 
 }
 
 private fun copyTimestamp(timestamp: Long): String {
-    return COPY_TIME_FORMAT.get().format(Date(timestamp))
+    val formatter = COPY_TIME_FORMAT.get()
+        ?: SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+    return formatter.format(Date(timestamp))
 }
 
 private val COPY_TIME_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
