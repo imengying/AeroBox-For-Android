@@ -39,6 +39,7 @@ AeroBox for Android is a sing-box / libbox based proxy toolchain for Android.
 - 常见 URI 节点订阅格式
 - sing-box outbound JSON / 常见 JSON 节点列表
 - 支持读取部分订阅流量与到期信息
+- 支持本地、扫码和单节点导入
 
 说明：
 
