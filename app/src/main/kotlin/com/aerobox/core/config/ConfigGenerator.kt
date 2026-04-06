@@ -93,7 +93,7 @@ object ConfigGenerator {
                     .takeUnless { it.isBlank() || isIpLiteral(it) }
             )
         )
-        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode))
+        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode, nodeIsIpv6Only))
 
         val proxyOutbound = buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG)
         config.put(
@@ -602,7 +602,8 @@ object ConfigGenerator {
     private fun buildInbounds(
         enableSocks: Boolean,
         enableHttp: Boolean,
-        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE,
+        nodeIsIpv6Only: Boolean = false
     ): JSONArray {
         val inbounds = JSONArray()
         val tunAddresses = JSONArray().apply {
@@ -618,7 +619,9 @@ object ConfigGenerator {
             .put("tag", "tun-in")
             .put("interface_name", "tun0")
             .put("address", tunAddresses)
-            .put("mtu", 1280)
+            // Some IPv6-only proxy paths blackhole larger packets during TLS
+            // handshake. Use a more conservative MTU for IPv6-only nodes.
+            .put("mtu", if (nodeIsIpv6Only) 1200 else 1280)
             .put("auto_route", true)
             .put("stack", "system")
 
