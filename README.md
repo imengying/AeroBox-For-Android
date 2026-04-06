@@ -43,7 +43,7 @@ AeroBox for Android is a sing-box / libbox based proxy toolchain for Android.
 
 说明：
 
-- 当前主要导入节点信息
+- 当前主要是导入节点信息
 - 订阅中的分流规则等信息不会直接照搬进应用配置
 
 ## 系统要求 / Requirements
