@@ -16,6 +16,7 @@ object ConfigGenerator {
     private const val DNS_DIRECT_TAG = "dns-direct"
     private const val DNS_REMOTE_TAG = "dns-remote"
     private const val DNS_BOOTSTRAP_TAG = "dns-bootstrap"
+    private const val DEFAULT_TUN_MTU = 9000
     const val V2RAY_API_LISTEN = "127.0.0.1:10085"
 
     private data class DnsServerSpec(
@@ -93,7 +94,7 @@ object ConfigGenerator {
                     .takeUnless { it.isBlank() || isIpLiteral(it) }
             )
         )
-        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode, nodeIsIpv6Only))
+        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode))
 
         val proxyOutbound = buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG)
         config.put(
@@ -602,8 +603,7 @@ object ConfigGenerator {
     private fun buildInbounds(
         enableSocks: Boolean,
         enableHttp: Boolean,
-        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE,
-        nodeIsIpv6Only: Boolean = false
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE
     ): JSONArray {
         val inbounds = JSONArray()
         val tunAddresses = JSONArray().apply {
@@ -619,9 +619,7 @@ object ConfigGenerator {
             .put("tag", "tun-in")
             .put("interface_name", "tun0")
             .put("address", tunAddresses)
-            // Some IPv6-only proxy paths blackhole larger packets during TLS
-            // handshake. Use a more conservative MTU for IPv6-only nodes.
-            .put("mtu", if (nodeIsIpv6Only) 1200 else 1280)
+            .put("mtu", DEFAULT_TUN_MTU)
             .put("auto_route", true)
             .put("stack", "system")
 
