@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:gravity="center"
+        android:width="72dp"
+        android:height="72dp">
+        <shape android:shape="oval">
+            <solid android:color="@color/splash_icon_plate" />
+        </shape>
+    </item>
+    <item
+        android:gravity="center"
+        android:width="42dp"
+        android:height="42dp"
+        android:drawable="@drawable/ic_launcher_foreground" />
+</layer-list>
