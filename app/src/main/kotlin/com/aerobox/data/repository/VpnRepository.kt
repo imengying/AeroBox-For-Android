@@ -62,7 +62,7 @@ class VpnRepository(private val context: Context) {
             if (currentIsIpv6Only != targetIsIpv6Only) {
                 RuntimeLogBuffer.append(
                     "info",
-                    "Switching across IPv6-only mode boundary, performing full VPN restart"
+                    "Switching across FakeIP mode boundary, performing full VPN restart"
                 )
                 stopVpn()
                 waitForServiceStop()
