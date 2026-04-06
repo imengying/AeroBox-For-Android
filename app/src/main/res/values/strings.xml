@@ -41,6 +41,12 @@
     <string name="operation_failed">操作失败，请稍后重试</string>
     <string name="add_node_first">请先选择节点</string>
     <string name="subscription_management">订阅管理</string>
+    <string name="scan_qr">扫码导入</string>
+    <string name="scan_qr_permission_required">需要相机权限才能扫码导入</string>
+    <string name="add_via_subscription_link">订阅链接</string>
+    <string name="add_via_nodes">节点导入</string>
+    <string name="add_via_local_file">本地导入</string>
+    <string name="node_content">节点内容</string>
     <string name="subscription_auto_update">启用自动更新</string>
     <string name="subscription_update_interval_minutes">自动更新间隔（分钟）</string>
     <string name="subscription_update_interval_hint">最小 15 分钟，建议 60 或 1440</string>

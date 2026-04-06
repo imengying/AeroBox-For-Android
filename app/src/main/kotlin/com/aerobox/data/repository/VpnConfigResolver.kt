@@ -60,11 +60,18 @@ class VpnConfigResolver(private val context: Context) {
         val nodeName = node.name.ifBlank { "unnamed node" }
         Log.w(TAG, "Generating config for $nodeName [${node.type.name}]")
         RuntimeLogBuffer.append("info", "Generating config for $nodeName [${node.type.name}]")
-        withContext(Dispatchers.IO) {
-            GeoAssetManager.ensureBundledAssets(context)
-        }
-
         val prefs = preferencesOverride ?: PreferenceManager.readVpnConfigPreferences(context)
+        if (prefs.enableGeoRules) {
+            if (!GeoAssetManager.ensureRuleSetAssets(context)) {
+                Log.e(TAG, GeoAssetManager.RULE_SET_UNAVAILABLE_MESSAGE)
+                RuntimeLogBuffer.append("error", GeoAssetManager.RULE_SET_UNAVAILABLE_MESSAGE)
+                throw IllegalStateException(GeoAssetManager.RULE_SET_UNAVAILABLE_MESSAGE)
+            }
+        } else {
+            withContext(Dispatchers.IO) {
+                GeoAssetManager.ensureBundledAssets(context)
+            }
+        }
         val geoIpCnRuleSetPath = if (prefs.enableGeoRules) {
             GeoAssetManager
                 .getGeoIpFile(context)

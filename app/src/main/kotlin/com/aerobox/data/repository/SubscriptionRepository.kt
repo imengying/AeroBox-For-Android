@@ -1,6 +1,7 @@
 package com.aerobox.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.withTransaction
 import com.aerobox.AeroBoxApplication
 import com.aerobox.core.logging.RuntimeLogBuffer
@@ -25,6 +26,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -53,6 +55,18 @@ class SubscriptionRepository(context: Context) {
         const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
         const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
         const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"
+        private val COMMENT_METADATA_REGEX =
+            Regex("""^\s*(#|//|;)\s*([A-Za-z-]+)\s*:\s*(.+?)\s*$""")
+        private val SUPPORTED_COMMENT_METADATA_KEYS = setOf(
+            "profile-title",
+            "profile-update-interval",
+            "subscription-userinfo",
+            "moved-permanently-to"
+        )
+        private val CONTENT_DISPOSITION_UTF8_REGEX =
+            Regex("""filename\*\s*=\s*UTF-8''([^;]+)""", RegexOption.IGNORE_CASE)
+        private val CONTENT_DISPOSITION_FILENAME_REGEX =
+            Regex("""filename\s*=\s*"?([^";]+)"?""", RegexOption.IGNORE_CASE)
 
         internal val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
@@ -64,7 +78,8 @@ class SubscriptionRepository(context: Context) {
 
     private data class SubscriptionFetchResult(
         val content: String,
-        val headers: Headers
+        val headers: Headers,
+        val resolvedUrl: String
     )
 
     private data class PreparedSubscriptionImport(
@@ -73,7 +88,10 @@ class SubscriptionRepository(context: Context) {
         val expireTimestamp: Long,
         val metadataFromHeader: Boolean,
         val sourceType: SubscriptionType,
-        val diagnostics: ParseDiagnostics
+        val diagnostics: ParseDiagnostics,
+        val resolvedName: String? = null,
+        val resolvedUrl: String? = null,
+        val resolvedUpdateInterval: Long? = null
     )
 
     private data class SubscriptionUserInfo(
@@ -89,7 +107,39 @@ class SubscriptionRepository(context: Context) {
         }
     }
 
+    private data class ImportMetadata(
+        val sanitizedContent: String,
+        val profileTitle: String? = null,
+        val canonicalUrl: String? = null,
+        val updateIntervalMs: Long? = null,
+        val userInfo: SubscriptionUserInfo? = null
+    )
+
+    private data class CommentMetadata(
+        val sanitizedContent: String,
+        val values: Map<String, String>
+    )
+
     fun getAllSubscriptions() = subscriptionDao.getAllSubscriptions()
+
+    suspend fun importExternalSource(
+        nameHint: String,
+        source: String,
+        autoUpdate: Boolean = false,
+        updateInterval: Long = DEFAULT_UPDATE_INTERVAL_MS
+    ): SubscriptionImportResult {
+        val trimmedSource = source.trim()
+        return if (isValidRemoteSubscriptionUrl(trimmedSource)) {
+            addSubscription(
+                name = nameHint,
+                url = trimmedSource,
+                autoUpdate = autoUpdate,
+                updateInterval = updateInterval
+            )
+        } else {
+            importLocalContent(nameHint, trimmedSource)
+        }
+    }
 
     suspend fun addSubscription(
         name: String,
@@ -98,16 +148,24 @@ class SubscriptionRepository(context: Context) {
         updateInterval: Long = DEFAULT_UPDATE_INTERVAL_MS
     ): SubscriptionImportResult {
         val normalizedInterval = normalizeUpdateInterval(updateInterval)
-        val subscription = Subscription(
-            name = name,
-            url = url,
-            autoUpdate = autoUpdate,
-            updateInterval = normalizedInterval,
-            createdAt = System.currentTimeMillis()
-        )
 
         return runCatching {
             val prepared = prepareSubscriptionImport(url)
+            val effectiveUrl = prepared.resolvedUrl ?: url
+            val effectiveName = name.ifBlank { prepared.resolvedName ?: deriveSubscriptionName(effectiveUrl) }
+                ?: "导入订阅"
+            val effectiveInterval = if (autoUpdate) {
+                prepared.resolvedUpdateInterval ?: normalizedInterval
+            } else {
+                normalizedInterval
+            }
+            val subscription = Subscription(
+                name = effectiveName,
+                url = effectiveUrl,
+                autoUpdate = autoUpdate,
+                updateInterval = effectiveInterval,
+                createdAt = System.currentTimeMillis()
+            )
             val updatedAt = System.currentTimeMillis()
             val subscriptionId = database.withTransaction {
                 val insertedId = subscriptionDao.insert(subscription)
@@ -120,7 +178,8 @@ class SubscriptionRepository(context: Context) {
                         nodeCount = nodes.size,
                         type = prepared.sourceType,
                         trafficBytes = prepared.trafficBytes,
-                        expireTimestamp = prepared.expireTimestamp
+                        expireTimestamp = prepared.expireTimestamp,
+                        updateInterval = effectiveInterval
                     )
                 )
                 insertedId
@@ -128,7 +187,7 @@ class SubscriptionRepository(context: Context) {
             SubscriptionUpdateScheduler.reconfigure(appContext)
             logImportDiagnostics(
                 action = "import",
-                subscriptionName = name,
+                subscriptionName = effectiveName,
                 diagnostics = prepared.diagnostics
             )
             SubscriptionImportResult(
@@ -249,13 +308,77 @@ class SubscriptionRepository(context: Context) {
         return findBestMatchingNode(node, subscriptionNodes)
     }
 
+    private suspend fun importLocalContent(
+        nameHint: String,
+        source: String
+    ): SubscriptionImportResult {
+        return runCatching {
+            val prepared = prepareInlineImport(source, nameHint)
+            val existingStandaloneFingerprints = proxyNodeDao.getNodesBySubscription(0L)
+                .asSequence()
+                .map { it.connectionFingerprint() }
+                .toSet()
+            val nodesToInsert = prepared.nodes
+                .filterNot { it.connectionFingerprint() in existingStandaloneFingerprints }
+                .mapIndexed { index, node ->
+                    val fallbackName = prepared.resolvedName
+                        ?.takeIf { prepared.nodes.size == 1 }
+                        ?: nameHint.takeIf { nameHint.isNotBlank() && prepared.nodes.size == 1 }
+                        ?: "导入节点 ${index + 1}"
+                    node.copy(
+                        name = node.name.ifBlank { fallbackName },
+                        subscriptionId = 0L
+                    )
+                }
+
+            if (nodesToInsert.isEmpty()) {
+                SubscriptionImportResult(
+                    subscriptionId = 0,
+                    nodeCount = 0,
+                    error = IllegalStateException("未导入新节点，可能已存在相同配置"),
+                    diagnostics = prepared.diagnostics
+                )
+            } else {
+                proxyNodeDao.insertAll(nodesToInsert)
+                logImportDiagnostics(
+                    action = "import",
+                    subscriptionName = nameHint.ifBlank { prepared.resolvedName ?: "inline-import" },
+                    diagnostics = prepared.diagnostics
+                )
+                SubscriptionImportResult(
+                    subscriptionId = 0,
+                    nodeCount = nodesToInsert.size,
+                    diagnostics = prepared.diagnostics
+                )
+            }
+        }.getOrElse { error ->
+            val diagnostics = (error as? NoValidNodesException)?.diagnostics ?: ParseDiagnostics()
+            logImportDiagnostics(
+                action = "import",
+                subscriptionName = nameHint.ifBlank { "inline-import" },
+                diagnostics = diagnostics
+            )
+            SubscriptionImportResult(
+                subscriptionId = 0,
+                nodeCount = 0,
+                error = error,
+                diagnostics = diagnostics
+            )
+        }
+    }
+
     private suspend fun prepareSubscriptionImport(url: String): PreparedSubscriptionImport {
         val fetchResult = fetchSubscription(url)
-        val parsed = SubscriptionParser.parseSubscriptionContent(fetchResult.content)
+        val metadata = parseImportMetadata(
+            source = fetchResult.content,
+            sourceUrl = fetchResult.resolvedUrl.ifBlank { url },
+            headers = fetchResult.headers
+        )
+        val parsed = SubscriptionParser.parseSubscriptionContent(metadata.sanitizedContent)
         if (parsed.nodes.isEmpty()) {
             throw NoValidNodesException(parsed.diagnostics)
         }
-        val userInfo = parseSubscriptionUserInfo(fetchResult.headers["Subscription-Userinfo"])
+        val userInfo = metadata.userInfo
         val remainingBytes = userInfo?.remainingBytes()
         val expireTimestamp = userInfo?.expireTimestamp
         return PreparedSubscriptionImport(
@@ -264,7 +387,35 @@ class SubscriptionRepository(context: Context) {
             expireTimestamp = expireTimestamp ?: parsed.expireTimestamp,
             metadataFromHeader = remainingBytes != null || expireTimestamp != null,
             sourceType = parsed.sourceType,
-            diagnostics = parsed.diagnostics
+            diagnostics = parsed.diagnostics,
+            resolvedName = metadata.profileTitle,
+            resolvedUrl = metadata.canonicalUrl,
+            resolvedUpdateInterval = metadata.updateIntervalMs
+        )
+    }
+
+    private suspend fun prepareInlineImport(
+        source: String,
+        nameHint: String
+    ): PreparedSubscriptionImport {
+        val metadata = parseImportMetadata(
+            source = source,
+            sourceUrl = null,
+            headers = null
+        )
+        val parsed = SubscriptionParser.parseSubscriptionContent(metadata.sanitizedContent)
+        if (parsed.nodes.isEmpty()) {
+            throw NoValidNodesException(parsed.diagnostics)
+        }
+        val userInfo = metadata.userInfo
+        return PreparedSubscriptionImport(
+            nodes = parsed.nodes,
+            trafficBytes = userInfo?.remainingBytes() ?: parsed.trafficBytes,
+            expireTimestamp = userInfo?.expireTimestamp ?: parsed.expireTimestamp,
+            metadataFromHeader = userInfo != null,
+            sourceType = parsed.sourceType,
+            diagnostics = parsed.diagnostics,
+            resolvedName = metadata.profileTitle ?: nameHint.takeIf { it.isNotBlank() }
         )
     }
 
@@ -287,7 +438,8 @@ class SubscriptionRepository(context: Context) {
                             cont.resume(
                                 SubscriptionFetchResult(
                                     content = it.body.string(),
-                                    headers = it.headers
+                                    headers = it.headers,
+                                    resolvedUrl = it.request.url.toString()
                                 )
                             )
                         }
@@ -323,11 +475,15 @@ class SubscriptionRepository(context: Context) {
             proxyNodeDao.insertAll(stabilizedNodes)
             subscriptionDao.update(
                 subscription.copy(
+                    url = prepared.resolvedUrl ?: subscription.url,
                     updateTime = updatedAt,
                     nodeCount = stabilizedNodes.size,
                     type = prepared.sourceType,
                     trafficBytes = prepared.trafficBytes,
-                    expireTimestamp = prepared.expireTimestamp
+                    expireTimestamp = prepared.expireTimestamp,
+                    updateInterval = prepared.resolvedUpdateInterval
+                        ?.takeIf { subscription.autoUpdate }
+                        ?: normalizeUpdateInterval(subscription.updateInterval)
                 )
             )
             proxyNodeDao.getNodesBySubscription(subscription.id)
@@ -499,9 +655,131 @@ class SubscriptionRepository(context: Context) {
         return SubscriptionUserInfo(
             uploadBytes = pairs["upload"]?.toLongOrNull(),
             downloadBytes = pairs["download"]?.toLongOrNull(),
-            totalBytes = pairs["total"]?.toLongOrNull(),
+            totalBytes = pairs["total"]?.toLongOrNull() ?: pairs["totl"]?.toLongOrNull(),
             expireTimestamp = pairs["expire"]?.toLongOrNull()?.let(::normalizeExpireTimestamp)
         )
+    }
+
+    private fun parseImportMetadata(
+        source: String,
+        sourceUrl: String?,
+        headers: Headers?
+    ): ImportMetadata {
+        val commentMetadata = parseLeadingCommentMetadata(source)
+        val headerTitle = headers?.valueByName("Profile-Title")?.let(::decodeMetadataValue)
+        val commentTitle = commentMetadata.values["profile-title"]?.let(::decodeMetadataValue)
+        val contentDispositionTitle = headers?.valueByName("Content-Disposition")
+            ?.let(::extractFilenameFromContentDisposition)
+        val profileTitle = firstNonBlank(
+            headerTitle,
+            commentTitle,
+            contentDispositionTitle,
+            sourceUrl?.let(::deriveSubscriptionName)
+        )
+        val updateIntervalMs = headers?.valueByName("profile-update-interval")
+            ?.let(::parseProfileUpdateInterval)
+            ?: commentMetadata.values["profile-update-interval"]?.let(::parseProfileUpdateInterval)
+        val canonicalUrl = firstNonBlank(
+            headers?.valueByName("moved-permanently-to"),
+            commentMetadata.values["moved-permanently-to"],
+            sourceUrl
+        )?.takeIf(::isValidRemoteSubscriptionUrl)
+        val userInfo = parseSubscriptionUserInfo(
+            headers?.valueByName("Subscription-Userinfo")
+                ?: commentMetadata.values["subscription-userinfo"]
+        )
+        return ImportMetadata(
+            sanitizedContent = commentMetadata.sanitizedContent,
+            profileTitle = profileTitle,
+            canonicalUrl = canonicalUrl,
+            updateIntervalMs = updateIntervalMs,
+            userInfo = userInfo
+        )
+    }
+
+    private fun parseLeadingCommentMetadata(source: String): CommentMetadata {
+        val lines = source.lines()
+        if (lines.isEmpty()) {
+            return CommentMetadata(source, emptyMap())
+        }
+
+        val metadata = linkedMapOf<String, String>()
+        val sanitizedLines = lines.toMutableList()
+        val maxLines = minOf(lines.size, 10)
+        repeat(maxLines) { index ->
+            val line = lines[index]
+            val match = COMMENT_METADATA_REGEX.matchEntire(line) ?: return@repeat
+            val key = match.groupValues[2].trim().lowercase()
+            val value = match.groupValues[3].trim()
+            if (key in SUPPORTED_COMMENT_METADATA_KEYS && value.isNotBlank()) {
+                metadata[key] = value
+                sanitizedLines[index] = ""
+            }
+        }
+        return CommentMetadata(
+            sanitizedContent = sanitizedLines.joinToString("\n"),
+            values = metadata
+        )
+    }
+
+    private fun Headers.valueByName(name: String): String? {
+        return names()
+            .firstOrNull { it.equals(name, ignoreCase = true) }
+            ?.let { headerName -> get(headerName) }
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun decodeMetadataValue(value: String): String {
+        val trimmed = value.trim()
+        val encodedValue = trimmed.substringAfter("base64:", "")
+        if (!trimmed.startsWith("base64:", ignoreCase = true) || encodedValue.isBlank()) {
+            return trimmed
+        }
+        return runCatching {
+            String(Base64.getDecoder().decode(encodedValue))
+        }.getOrDefault(trimmed)
+    }
+
+    private fun extractFilenameFromContentDisposition(value: String): String? {
+        CONTENT_DISPOSITION_UTF8_REGEX.find(value)?.let { match ->
+            return sanitizeProfileFileName(Uri.decode(match.groupValues[1]))
+        }
+        CONTENT_DISPOSITION_FILENAME_REGEX.find(value)?.let { match ->
+            return sanitizeProfileFileName(match.groupValues[1])
+        }
+        return null
+    }
+
+    private fun sanitizeProfileFileName(value: String): String? {
+        val trimmed = value.trim().trim('"').trim('\'')
+        if (trimmed.isBlank()) return null
+        return trimmed.substringBeforeLast('.').ifBlank { trimmed }
+    }
+
+    private fun deriveSubscriptionName(url: String): String? {
+        return runCatching {
+            val uri = Uri.parse(url)
+            uri.fragment?.trim()?.takeIf { it.isNotBlank() }
+                ?: sanitizeProfileFileName(uri.lastPathSegment ?: uri.host.orEmpty())
+        }.getOrNull()
+    }
+
+    private fun parseProfileUpdateInterval(value: String): Long? {
+        val hours = value.trim().toLongOrNull() ?: return null
+        if (hours <= 0L) return null
+        return normalizeUpdateInterval(hours * 60L * 60L * 1000L)
+    }
+
+    private fun isValidRemoteSubscriptionUrl(url: String): Boolean {
+        return runCatching {
+            val parsed = Uri.parse(url.trim())
+            parsed.scheme.equals("https", ignoreCase = true) && !parsed.host.isNullOrBlank()
+        }.getOrDefault(false)
+    }
+
+    private fun firstNonBlank(vararg values: String?): String? {
+        return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     private fun normalizeExpireTimestamp(timestamp: Long): Long {

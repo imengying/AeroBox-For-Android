@@ -287,10 +287,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val state = VpnStateManager.vpnState.value
         val currentNode = state.currentNode
         if (state.isConnected && currentNode != null) {
-            val candidateConfig = configResolver.buildConfig(
-                node = currentNode,
-                preferencesOverride = candidatePrefs
-            )
+            val candidateConfig = runCatching {
+                configResolver.buildConfig(
+                    node = currentNode,
+                    preferencesOverride = candidatePrefs
+                )
+            }.getOrElse { error ->
+                val message = error.message?.takeIf { it.isNotBlank() } ?: "配置生成失败"
+                _uiMessage.tryEmit("DNS 设置无效：$message")
+                return null
+            }
             val configError = configResolver.validateConfig(candidateConfig)
             if (configError != null) {
                 _uiMessage.tryEmit("DNS 设置无效：$configError")

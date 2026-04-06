@@ -2,6 +2,7 @@ package com.aerobox.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aerobox.core.subscription.ParseDiagnostics
@@ -175,6 +176,99 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun importExternalSource(
+        source: String,
+        nameHint: String = "",
+        autoUpdate: Boolean = true,
+        updateInterval: Long = SubscriptionRepository.DEFAULT_UPDATE_INTERVAL_MS
+    ) {
+        val trimmedSource = source.trim()
+        if (trimmedSource.isBlank()) {
+            _uiMessage.tryEmit("导入内容为空")
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = runCatching {
+                repository.importExternalSource(
+                    nameHint = nameHint.trim(),
+                    source = trimmedSource,
+                    autoUpdate = autoUpdate,
+                    updateInterval = updateInterval
+                )
+            }
+            result
+                .onSuccess { importResult ->
+                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+                }
+                .onFailure { error ->
+                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun importNodeContent(
+        source: String,
+        nameHint: String = ""
+    ) {
+        val trimmedSource = source.trim()
+        if (trimmedSource.isBlank()) {
+            _uiMessage.tryEmit("节点内容为空")
+            return
+        }
+        if (isValidSubscriptionUrl(trimmedSource)) {
+            _uiMessage.tryEmit("订阅链接请使用“订阅链接”入口导入")
+            return
+        }
+        importExternalSource(
+            source = trimmedSource,
+            nameHint = nameHint,
+            autoUpdate = false,
+            updateInterval = SubscriptionRepository.DEFAULT_UPDATE_INTERVAL_MS
+        )
+    }
+
+    fun importLocalFile(uri: Uri) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = runCatching {
+                val resolver = appContext.contentResolver
+                val displayName = resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+                }
+                val sizeBytes = resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getLong(index) else null
+                }
+                if (sizeBytes != null && sizeBytes > 8L * 1024L * 1024L) {
+                    throw IllegalStateException("本地文件过大，暂不支持超过 8 MB 的配置")
+                }
+                val content = resolver.openInputStream(uri)?.use { input -> input.readBytes() }
+                    ?.toString(Charsets.UTF_8)
+                    ?.removePrefix("\uFEFF")
+                    ?.trim()
+                    ?: throw IllegalStateException("无法读取本地文件")
+                repository.importExternalSource(
+                    nameHint = displayName.orEmpty().substringBeforeLast('.'),
+                    source = content,
+                    autoUpdate = true,
+                    updateInterval = SubscriptionRepository.DEFAULT_UPDATE_INTERVAL_MS
+                )
+            }
+            result
+                .onSuccess { importResult ->
+                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+                }
+                .onFailure { error ->
+                    _uiMessage.tryEmit("导入本地文件失败：${toFriendlyError(error)}")
+                }
+            _isLoading.value = false
+        }
+    }
+
     private fun isValidSubscriptionUrl(url: String): Boolean {
         return runCatching {
             val parsed = Uri.parse(url.trim())
@@ -186,8 +280,13 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     private fun formatImportResultMessage(result: SubscriptionImportResult): String {
         val error = result.error
         if (error == null && result.nodeCount > 0) {
+            val successPrefix = if (result.subscriptionId == 0L) {
+                "导入成功：已添加 ${result.nodeCount} 个未分组节点"
+            } else {
+                "导入成功：${result.nodeCount} 个节点"
+            }
             return buildString {
-                append("导入成功：").append(result.nodeCount).append(" 个节点")
+                append(successPrefix)
                 if (result.metadataFromHeader) {
                     append("，已读取订阅流量/到期信息")
                 }
@@ -222,8 +321,10 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                 val text = error.message.orEmpty()
                 if (text.startsWith("HTTP ")) {
                     "订阅服务器返回 $text"
+                } else if (text.isNotBlank()) {
+                    text
                 } else {
-                    text.ifBlank { "网络异常，请稍后重试" }
+                    "网络异常，请稍后重试"
                 }
             }
             else -> error.message?.takeIf { it.isNotBlank() } ?: "未知错误"

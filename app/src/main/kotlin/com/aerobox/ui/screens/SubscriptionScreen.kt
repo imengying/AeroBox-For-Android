@@ -1,5 +1,9 @@
 package com.aerobox.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -37,6 +41,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -56,6 +62,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,19 +70,26 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aerobox.R
 import com.aerobox.data.model.Subscription
+import com.aerobox.imports.ExternalImportParser
+import com.aerobox.imports.ExternalImportRequest
 import com.aerobox.ui.components.AppSnackbarHost
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.viewmodel.SubscriptionViewModel
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,18 +98,56 @@ import java.util.Locale
 @Composable
 fun SubscriptionScreen(
     onNavigateBack: () -> Unit,
+    pendingExternalImport: ExternalImportRequest? = null,
+    onExternalImportHandled: (Long) -> Unit = {},
     viewModel: SubscriptionViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showImportMenu by remember { mutableStateOf(false) }
+    var showAddSubscriptionDialog by remember { mutableStateOf(false) }
+    var showAddNodeDialog by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<Subscription?>(null) }
     var deleteTarget by remember { mutableStateOf<Subscription?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var orderedSubscriptions by remember { mutableStateOf(subscriptions) }
     var draggingSubscriptionId by remember { mutableStateOf<Long?>(null) }
     var draggingOffsetY by remember { mutableFloatStateOf(0f) }
+    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val importRequest = ExternalImportParser.fromText(result.contents)
+        if (importRequest != null) {
+            viewModel.importExternalSource(
+                source = importRequest.source,
+                nameHint = importRequest.suggestedName.orEmpty()
+            )
+        } else if (!result.contents.isNullOrBlank()) {
+            viewModel.importExternalSource(
+                source = result.contents,
+                nameHint = ""
+            )
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            qrScanLauncher.launch(buildQrScanOptions())
+        } else {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.scan_qr_permission_required)
+                )
+            }
+        }
+    }
+    val localFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let(viewModel::importLocalFile)
+    }
     val refreshRotation = if (isLoading) {
         val transition = rememberInfiniteTransition(label = "subscription_refresh")
         val rotation by transition.animateFloat(
@@ -115,6 +167,16 @@ fun SubscriptionScreen(
     LaunchedEffect(viewModel) {
         viewModel.uiMessage.collectLatest { message ->
             snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    LaunchedEffect(pendingExternalImport?.id) {
+        pendingExternalImport?.let { request ->
+            viewModel.importExternalSource(
+                source = request.source,
+                nameHint = request.suggestedName.orEmpty()
+            )
+            onExternalImportHandled(request.id)
         }
     }
 
@@ -155,8 +217,51 @@ fun SubscriptionScreen(
         },
         snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_subscription))
+            Box {
+                DropdownMenu(
+                    expanded = showImportMenu,
+                    onDismissRequest = { showImportMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_via_subscription_link)) },
+                        onClick = {
+                            showImportMenu = false
+                            showAddSubscriptionDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_via_nodes)) },
+                        onClick = {
+                            showImportMenu = false
+                            showAddNodeDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.scan_qr)) },
+                        onClick = {
+                            showImportMenu = false
+                            val hasCameraPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (hasCameraPermission) {
+                                qrScanLauncher.launch(buildQrScanOptions())
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_via_local_file)) },
+                        onClick = {
+                            showImportMenu = false
+                            localFileLauncher.launch(arrayOf("*/*"))
+                        }
+                    )
+                }
+                FloatingActionButton(onClick = { showImportMenu = !showImportMenu }) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_subscription))
+                }
             }
         }
     ) { innerPadding ->
@@ -264,11 +369,11 @@ fun SubscriptionScreen(
     }
 
     // Add subscription dialog
-    if (showAddDialog) {
+    if (showAddSubscriptionDialog) {
         SubscriptionEditorDialog(
             title = stringResource(R.string.add_subscription),
             confirmText = stringResource(R.string.add),
-            onDismiss = { showAddDialog = false },
+            onDismiss = { showAddSubscriptionDialog = false },
             onConfirm = { name, url, autoUpdate, updateInterval ->
                 viewModel.addSubscription(
                     name = name,
@@ -276,7 +381,20 @@ fun SubscriptionScreen(
                     autoUpdate = autoUpdate,
                     updateInterval = updateInterval
                 )
-                showAddDialog = false
+                showAddSubscriptionDialog = false
+            }
+        )
+    }
+
+    if (showAddNodeDialog) {
+        NodeImportDialog(
+            onDismiss = { showAddNodeDialog = false },
+            onConfirm = { name, content ->
+                viewModel.importNodeContent(
+                    source = content,
+                    nameHint = name
+                )
+                showAddNodeDialog = false
             }
         )
     }
@@ -324,6 +442,60 @@ fun SubscriptionScreen(
             }
         )
     }
+}
+
+private fun buildQrScanOptions(): ScanOptions {
+    return ScanOptions().apply {
+        setPrompt("扫描订阅或节点二维码")
+        setBeepEnabled(false)
+        setOrientationLocked(false)
+    }
+}
+
+@Composable
+private fun NodeImportDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, content: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.add_via_nodes)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.subscription_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(stringResource(R.string.node_content)) },
+                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), content.trim()) },
+                enabled = content.isNotBlank()
+            ) {
+                Text(stringResource(R.string.add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

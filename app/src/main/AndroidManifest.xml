@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -31,6 +32,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vmess" />
+                <data android:scheme="vless" />
+                <data android:scheme="ss" />
+                <data android:scheme="trojan" />
+                <data android:scheme="hysteria2" />
+                <data android:scheme="hy2" />
+                <data android:scheme="tuic" />
+                <data android:scheme="socks" />
+                <data android:scheme="socks4" />
+                <data android:scheme="socks4a" />
             </intent-filter>
         </activity>
 

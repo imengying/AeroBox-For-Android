@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 object GeoAssetManager {
 
     private const val TAG = "GeoAssetManager"
+    const val RULE_SET_UNAVAILABLE_MESSAGE = "Geo rule-set 资源不可用，请先更新规则资源后重试"
 
     private const val GEOIP_REPO = "SagerNet/sing-geoip"
     private const val GEOSITE_REPO = "SagerNet/sing-geosite"
@@ -84,6 +85,20 @@ object GeoAssetManager {
             writeVersionFile(getGeoSiteVersionFile(context), fetchLatestReleaseTag(GEOSITE_REPO))
         }
         ipOk && cnOk && adsOk
+    }
+
+    suspend fun ensureRuleSetAssets(context: Context): Boolean = withContext(Dispatchers.IO) {
+        ensureBundledAssets(context)
+        if (hasLocalFiles(context)) {
+            return@withContext true
+        }
+
+        val updated = updateAll(context)
+        val available = updated && hasLocalFiles(context)
+        if (!available) {
+            Log.w(TAG, RULE_SET_UNAVAILABLE_MESSAGE)
+        }
+        available
     }
 
     @Synchronized

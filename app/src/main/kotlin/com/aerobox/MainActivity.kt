@@ -25,6 +25,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aerobox.core.connection.ConnectionDiagnostics
 import com.aerobox.data.repository.VpnConnectionResult
+import com.aerobox.imports.ExternalImportParser
+import com.aerobox.imports.ExternalImportRequest
 import com.aerobox.data.repository.VpnRepository
 import com.aerobox.service.AeroBoxVpnService
 import com.aerobox.ui.components.AppSnackbarHost
@@ -32,6 +34,7 @@ import com.aerobox.ui.navigation.AppNavigation
 import com.aerobox.ui.theme.SingBoxVPNTheme
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -42,6 +45,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val uiMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val pendingExternalImport = MutableStateFlow<ExternalImportRequest?>(null)
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -83,13 +87,22 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = dynamicColor
             ) {
                 val snackbarHostState = remember { SnackbarHostState() }
+                val importRequest by pendingExternalImport.collectAsStateWithLifecycle()
                 LaunchedEffect(Unit) {
                     uiMessage.collectLatest { message ->
                         snackbarHostState.showSnackbar(message)
                     }
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AppNavigation()
+                    AppNavigation(
+                        pendingExternalImport = importRequest,
+                        onExternalImportHandled = { requestId ->
+                            val current = pendingExternalImport.value
+                            if (current?.id == requestId) {
+                                pendingExternalImport.value = null
+                            }
+                        }
+                    )
                     AppSnackbarHost(
                         hostState = snackbarHostState,
                         modifier = Modifier.align(Alignment.BottomCenter)
@@ -108,6 +121,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun consumeActionIntent(intent: Intent?) {
+        ExternalImportParser.fromIntent(intent)?.let { request ->
+            pendingExternalImport.value = request
+            return
+        }
+
         val action = intent?.getStringExtra(EXTRA_ACTION) ?: return
         if (action == ACTION_TOGGLE_VPN) {
             intent.removeExtra(EXTRA_ACTION)

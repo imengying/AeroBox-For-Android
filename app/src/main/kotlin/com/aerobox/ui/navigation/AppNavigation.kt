@@ -19,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -37,6 +38,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import com.aerobox.imports.ExternalImportRequest
 import kotlinx.coroutines.launch
 
 private data class BottomNavItem(
@@ -47,10 +49,21 @@ private data class BottomNavItem(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    pendingExternalImport: ExternalImportRequest? = null,
+    onExternalImportHandled: (Long) -> Unit = {}
+) {
     val navController = rememberNavController()
 
     val slideDuration = 300
+
+    LaunchedEffect(pendingExternalImport?.id) {
+        if (pendingExternalImport != null) {
+            navController.navigate("subscriptions") {
+                launchSingleTop = true
+            }
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -110,7 +123,9 @@ fun AppNavigation() {
             }
             composable("subscriptions") {
                 SubscriptionScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    pendingExternalImport = pendingExternalImport,
+                    onExternalImportHandled = onExternalImportHandled
                 )
             }
             composable("per_app_proxy") {

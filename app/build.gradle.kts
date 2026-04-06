@@ -102,6 +102,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.yaml:snakeyaml:2.6")
     implementation("org.tukaani:xz:1.11")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     implementation(files(layout.buildDirectory.file("libbox/libbox.aar")))
 
