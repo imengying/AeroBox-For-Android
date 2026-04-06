@@ -912,7 +912,7 @@ object ConfigGenerator {
                 outbound.put("type", "socks")
                 node.username?.let { outbound.put("username", it) }
                 node.password?.let { outbound.put("password", it) }
-                node.socksVersion?.takeIf { it.isNotBlank() }?.let { outbound.put("version", it) }
+                node.socksVersion?.takeIf { it == "5" }?.let { outbound.put("version", it) }
                 enabledNetwork?.let { outbound.put("network", it) }
                 buildUdpOverTcp(node.udpOverTcpEnabled, node.udpOverTcpVersion)?.let {
                     outbound.put("udp_over_tcp", it)

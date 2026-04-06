@@ -45,8 +45,6 @@
                 <data android:scheme="hy2" />
                 <data android:scheme="tuic" />
                 <data android:scheme="socks" />
-                <data android:scheme="socks4" />
-                <data android:scheme="socks4a" />
             </intent-filter>
         </activity>
 

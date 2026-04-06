@@ -501,8 +501,6 @@ object SubscriptionParser {
                     "invalid_or_unsupported_hysteria2_uri"
                 uri.startsWith("tuic://", ignoreCase = true) -> "invalid_or_unsupported_tuic_uri"
                 uri.startsWith("socks://", ignoreCase = true) ||
-                    uri.startsWith("socks4://", ignoreCase = true) ||
-                    uri.startsWith("socks4a://", ignoreCase = true) ||
                     uri.startsWith("socks5://", ignoreCase = true) -> "invalid_or_unsupported_socks_uri"
                 uri.startsWith("http://", ignoreCase = true) || uri.startsWith("https://", ignoreCase = true) ->
                     "invalid_or_unsupported_http_uri"
@@ -516,8 +514,6 @@ object SubscriptionParser {
                 uri.startsWith("hysteria2://", ignoreCase = true) || uri.startsWith("hy2://", ignoreCase = true) -> parseHysteria2Uri(uri)
                 uri.startsWith("tuic://", ignoreCase = true) -> parseTuicUri(uri)
                 uri.startsWith("socks://", ignoreCase = true) ||
-                    uri.startsWith("socks4://", ignoreCase = true) ||
-                    uri.startsWith("socks4a://", ignoreCase = true) ||
                     uri.startsWith("socks5://", ignoreCase = true) -> parseSocksUri(uri)
                 uri.startsWith("http://", ignoreCase = true) -> parseHttpProxyUri(uri)
                 uri.startsWith("https://", ignoreCase = true) -> parseHttpProxyUri(uri)
@@ -838,7 +834,7 @@ object SubscriptionParser {
                 typeRaw.contains("trojan") -> ProxyType.TROJAN
                 typeRaw.contains("hysteria2") || typeRaw == "hy2" -> ProxyType.HYSTERIA2
                 typeRaw.contains("tuic") -> ProxyType.TUIC
-                typeRaw == "socks" || typeRaw == "socks4" || typeRaw == "socks4a" || typeRaw == "socks5" -> ProxyType.SOCKS
+                typeRaw == "socks" || typeRaw == "socks5" -> ProxyType.SOCKS
                 typeRaw == "http" || typeRaw == "https" -> ProxyType.HTTP
                 else -> {
                     diagnostics = diagnostics.withIgnored("unsupported_json_type")
@@ -961,8 +957,6 @@ object SubscriptionParser {
                 socksVersion = firstNonBlank(
                     obj.optString("version", "").ifBlank { null },
                     when (typeRaw) {
-                        "socks4" -> "4"
-                        "socks4a" -> "4a"
                         "socks5" -> "5"
                         else -> null
                     }
@@ -1003,14 +997,7 @@ object SubscriptionParser {
         return NodeParseBatch(nodes = result, diagnostics = diagnostics)
     }
     private fun parseSocksUri(uri: String): ProxyNode? {
-        val version = when {
-            uri.startsWith("socks4a://", ignoreCase = true) -> "4a"
-            uri.startsWith("socks4://", ignoreCase = true) -> "4"
-            else -> "5"
-        }
         val normalized = uri
-            .replaceFirst(Regex("^socks4a://", RegexOption.IGNORE_CASE), "socks://")
-            .replaceFirst(Regex("^socks4://", RegexOption.IGNORE_CASE), "socks://")
             .replaceFirst(Regex("^socks5?://", RegexOption.IGNORE_CASE), "socks://")
         val parsed = Uri.parse(normalized)
         val server = parsed.host ?: return null
@@ -1020,13 +1007,13 @@ object SubscriptionParser {
         val password = userInfo?.substringAfter(':', "")?.ifBlank { null }
 
         return ProxyNode(
-            name = decodeName(parsed.fragment ?: "SOCKS$version"),
+            name = decodeName(parsed.fragment ?: "SOCKS5"),
             type = ProxyType.SOCKS,
             server = server,
             port = port,
             username = username,
             password = password,
-            socksVersion = version,
+            socksVersion = "5",
             udpOverTcpEnabled = parseBooleanOrNull(parsed.getQueryParameter("uot"))
         ).withUriSharedOptions(parseUriParams(parsed.query))
     }

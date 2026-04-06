@@ -20,8 +20,7 @@ object ExternalImportParser {
         "hy2",
         "tuic",
         "socks",
-        "socks4",
-        "socks4a"
+        "socks5"
     )
     private val supportedTextPrefixes = listOf("#", "//", ";", "{", "[")
 

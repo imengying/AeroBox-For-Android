@@ -28,14 +28,12 @@ object PreferenceManager {
     // Routing & Network
     private val ROUTING_MODE = stringPreferencesKey("routing_mode")
     private val REMOTE_DNS = stringPreferencesKey("remote_dns")
-    // Keep the legacy storage key to preserve existing user data.
-    private val DIRECT_DNS = stringPreferencesKey("local_dns")
+    private val DIRECT_DNS = stringPreferencesKey("direct_dns")
     private val PER_APP_PROXY_ENABLED = booleanPreferencesKey("per_app_proxy_enabled")
     private val PER_APP_PROXY_MODE = stringPreferencesKey("per_app_proxy_mode") // "whitelist" or "blacklist"
     private val PER_APP_PROXY_PACKAGES = stringSetPreferencesKey("per_app_proxy_packages")
     private val ENABLE_SOCKS_INBOUND = booleanPreferencesKey("enable_socks_inbound")
     private val ENABLE_HTTP_INBOUND = booleanPreferencesKey("enable_http_inbound")
-    private val ENABLE_IPV6 = booleanPreferencesKey("enable_ipv6")
     private val IPV6_MODE = stringPreferencesKey("ipv6_mode")
     private val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
     private val ENABLE_GEO_RULES = booleanPreferencesKey("enable_geo_rules")
@@ -92,16 +90,7 @@ object PreferenceManager {
 
     fun ipv6ModeFlow(context: Context): Flow<IPv6Mode> =
         context.dataStore.data.map {
-            val stored = it[IPV6_MODE]
-            if (!stored.isNullOrBlank()) {
-                when (stored) {
-                    "DISABLE" -> IPv6Mode.DISABLE
-                    "ENABLE", "PREFER", "ONLY", "PREFER_IPV6" -> IPv6Mode.ENABLE
-                    else -> IPv6Mode.DISABLE
-                }
-            } else {
-                if (it[ENABLE_IPV6] ?: false) IPv6Mode.ENABLE else IPv6Mode.DISABLE
-            }
+            runCatching { IPv6Mode.valueOf(it[IPV6_MODE] ?: "") }.getOrDefault(IPv6Mode.DISABLE)
         }
 
     fun autoReconnectFlow(context: Context): Flow<Boolean> =
@@ -181,7 +170,6 @@ object PreferenceManager {
     suspend fun setIPv6Mode(context: Context, mode: IPv6Mode) {
         context.dataStore.edit {
             it[IPV6_MODE] = mode.name
-            it[ENABLE_IPV6] = mode != IPv6Mode.DISABLE
         }
     }
 
@@ -230,18 +218,8 @@ object PreferenceManager {
         val prefs = context.dataStore.data.first()
         val routingMode = runCatching { RoutingMode.valueOf(prefs[ROUTING_MODE] ?: "") }
             .getOrDefault(RoutingMode.GLOBAL_PROXY)
-        val ipv6Mode = run {
-            val stored = prefs[IPV6_MODE]
-            if (!stored.isNullOrBlank()) {
-                when (stored) {
-                    "DISABLE" -> IPv6Mode.DISABLE
-                    "ENABLE", "PREFER", "ONLY", "PREFER_IPV6" -> IPv6Mode.ENABLE
-                    else -> IPv6Mode.DISABLE
-                }
-            } else {
-                if (prefs[ENABLE_IPV6] ?: false) IPv6Mode.ENABLE else IPv6Mode.DISABLE
-            }
-        }
+        val ipv6Mode = runCatching { IPv6Mode.valueOf(prefs[IPV6_MODE] ?: "") }
+            .getOrDefault(IPv6Mode.DISABLE)
         return VpnConfigPreferences(
             routingMode = routingMode,
             remoteDns = prefs[REMOTE_DNS] ?: DEFAULT_REMOTE_DNS,
