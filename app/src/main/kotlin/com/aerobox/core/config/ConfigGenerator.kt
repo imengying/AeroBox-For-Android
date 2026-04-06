@@ -16,6 +16,7 @@ object ConfigGenerator {
     private const val DNS_DIRECT_TAG = "dns-direct"
     private const val DNS_REMOTE_TAG = "dns-remote"
     private const val DNS_BOOTSTRAP_TAG = "dns-bootstrap"
+    private const val DNS_FAKE_TAG = "dns-fake"
     private const val DEFAULT_TUN_MTU = 9000
     const val V2RAY_API_LISTEN = "127.0.0.1:10085"
 
@@ -233,15 +234,18 @@ object ConfigGenerator {
             dialStrategyOverride = remoteDnsStrategy
         )
 
+        val servers = JSONArray().apply {
+            put(remoteServer)
+            put(directServer)
+            put(localResolverServer)
+            put(bootstrapServer)
+            if (nodeIsIpv6Only) {
+                put(buildFakeIpDnsServer())
+            }
+        }
+
         val dns = JSONObject()
-            .put(
-                "servers",
-                JSONArray()
-                    .put(remoteServer)
-                    .put(directServer)
-                    .put(localResolverServer)
-                    .put(bootstrapServer)
-            )
+            .put("servers", servers)
             .put("final", DNS_REMOTE_TAG)
             // Android apps often resolve domains before opening the actual
             // socket. Keep reverse IP->domain mappings so transparent proxy
@@ -251,6 +255,14 @@ object ConfigGenerator {
             .putDnsQueryStrategy(ipv6Mode)
 
         val dnsRules = JSONArray()
+        if (nodeIsIpv6Only) {
+            dnsRules.put(
+                JSONObject()
+                    .put("inbound", JSONArray().put("tun-in"))
+                    .put("server", DNS_FAKE_TAG)
+                    .put("disable_cache", true)
+            )
+        }
         serverDomainHint
             ?.lowercase()
             ?.takeIf { it.isNotBlank() }
@@ -283,6 +295,14 @@ object ConfigGenerator {
         }
 
         return dns
+    }
+
+    private fun buildFakeIpDnsServer(): JSONObject {
+        return JSONObject()
+            .put("type", "fakeip")
+            .put("tag", DNS_FAKE_TAG)
+            .put("inet4_range", "198.18.0.0/15")
+            .put("inet6_range", "fc00::/18")
     }
 
     private fun bootstrapDnsAddress(nodeIsIpv6Only: Boolean): String {
