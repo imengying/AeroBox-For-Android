@@ -15,9 +15,11 @@ import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 
 sealed interface VpnConnectionResult {
@@ -53,6 +55,23 @@ class VpnRepository(private val context: Context) {
     }
 
     suspend fun switchToNode(node: ProxyNode): VpnConnectionResult {
+        val currentNode = VpnStateManager.vpnState.value.currentNode
+        if (currentNode != null) {
+            val currentIsIpv6Only = NodeAddressFamilyResolver.isIpv6Only(currentNode)
+            val targetIsIpv6Only = NodeAddressFamilyResolver.isIpv6Only(node)
+            if (currentIsIpv6Only != targetIsIpv6Only) {
+                RuntimeLogBuffer.append(
+                    "info",
+                    "Switching across IPv6-only mode boundary, performing full VPN restart"
+                )
+                stopVpn()
+                waitForServiceStop()
+                return launchNodeAction(node) { config, resolvedNode ->
+                    startVpn(config, resolvedNode.id)
+                }
+            }
+        }
+
         return launchNodeAction(node) { config, resolvedNode ->
             switchNode(config, resolvedNode.id)
         }
@@ -161,6 +180,17 @@ class VpnRepository(private val context: Context) {
             action = AeroBoxVpnService.ACTION_STOP
         }
         ContextCompat.startForegroundService(context, intent)
+    }
+
+    private suspend fun waitForServiceStop(timeoutMs: Long = 5_000L) {
+        withTimeoutOrNull(timeoutMs) {
+            while (VpnStateManager.serviceActive.value) {
+                delay(100)
+            }
+        } ?: RuntimeLogBuffer.append(
+            "warn",
+            "Timed out waiting for VPN service to stop before restart"
+        )
     }
 
     suspend fun urlTestNode(

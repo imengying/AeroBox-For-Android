@@ -95,7 +95,7 @@ object ConfigGenerator {
                     .takeUnless { it.isBlank() || isIpLiteral(it) }
             )
         )
-        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode, nodeIsIpv6Only))
+        config.put("inbounds", buildInbounds(enableSocksInbound, enableHttpInbound, ipv6Mode))
 
         val proxyOutbound = buildProxyOutbound(node).put("tag", PROXY_OUTBOUND_TAG)
         config.put(
@@ -217,11 +217,7 @@ object ConfigGenerator {
             return JSONObject()
                 .put("servers", JSONArray().put(directServer).put(localResolverServer).put(bootstrapServer))
                 .put("final", DNS_DIRECT_TAG)
-                // Android apps often resolve domains before opening the actual
-                // socket. Keep reverse IP->domain mappings so transparent proxy
-                // flows can still recover the original hostname during routing.
                 .put("independent_cache", true)
-                .put("reverse_mapping", true)
                 .putDnsQueryStrategy(ipv6Mode)
         }
 
@@ -247,11 +243,7 @@ object ConfigGenerator {
         val dns = JSONObject()
             .put("servers", servers)
             .put("final", DNS_REMOTE_TAG)
-            // Android apps often resolve domains before opening the actual
-            // socket. Keep reverse IP->domain mappings so transparent proxy
-            // flows can still recover the original hostname during routing.
             .put("independent_cache", true)
-            .put("reverse_mapping", true)
             .putDnsQueryStrategy(ipv6Mode)
 
         val dnsRules = JSONArray()
@@ -633,8 +625,7 @@ object ConfigGenerator {
     private fun buildInbounds(
         enableSocks: Boolean,
         enableHttp: Boolean,
-        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE,
-        nodeIsIpv6Only: Boolean = false
+        ipv6Mode: IPv6Mode = IPv6Mode.ENABLE
     ): JSONArray {
         val inbounds = JSONArray()
         val tunAddresses = JSONArray().apply {
@@ -652,7 +643,7 @@ object ConfigGenerator {
             .put("address", tunAddresses)
             .put("mtu", DEFAULT_TUN_MTU)
             .put("auto_route", true)
-            .put("stack", if (nodeIsIpv6Only) "mixed" else "system")
+            .put("stack", "mixed")
 
         inbounds.put(tunInbound)
 
