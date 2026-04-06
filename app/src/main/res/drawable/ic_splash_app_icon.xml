@@ -2,15 +2,16 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:gravity="center"
-        android:width="72dp"
-        android:height="72dp">
-        <shape android:shape="oval">
+        android:width="68dp"
+        android:height="68dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="18dp" />
             <solid android:color="@color/splash_icon_plate" />
         </shape>
     </item>
     <item
         android:gravity="center"
-        android:width="42dp"
-        android:height="42dp"
-        android:drawable="@drawable/ic_launcher_foreground" />
+        android:width="34dp"
+        android:height="34dp"
+        android:drawable="@drawable/ic_splash_foreground" />
 </layer-list>
