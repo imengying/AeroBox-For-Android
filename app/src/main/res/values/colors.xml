@@ -3,4 +3,7 @@
     <color name="launch_background">#FFF9F9FF</color>
     <color name="splash_icon_plate">#FFF1F5FB</color>
     <color name="splash_icon_foreground">#FF157BDE</color>
+    <color name="qr_scanner_mask">#A6000000</color>
+    <color name="qr_scanner_frame">#E6FFFFFF</color>
+    <color name="qr_scanner_corner">#FF57A4FF</color>
 </resources>

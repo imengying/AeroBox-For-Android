@@ -57,6 +57,12 @@
             android:taskAffinity=""
             android:theme="@style/Theme.AeroBox.Translucent" />
 
+        <activity
+            android:name=".ui.scanner.AeroBoxQrCaptureActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.AeroBox.Scanner" />
+
         <service
             android:name=".service.AeroBoxVpnService"
             android:enabled="true"

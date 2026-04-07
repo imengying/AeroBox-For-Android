@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <com.journeyapps.barcodescanner.BarcodeView
+        android:id="@+id/zxing_barcode_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.aerobox.ui.scanner.AeroBoxQrViewfinderView
+        android:id="@+id/zxing_viewfinder_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:zxing_viewfinder_laser_visibility="false"
+        app:zxing_viewfinder_mask="@color/qr_scanner_mask"
+        app:zxing_possible_result_points="@color/qr_scanner_corner" />
+
+    <TextView
+        android:id="@+id/zxing_status_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="@dimen/qr_scanner_prompt_margin_bottom"
+        android:background="@android:color/transparent"
+        android:gravity="center"
+        android:maxLines="2"
+        android:textColor="@android:color/white"
+        android:textSize="18sp" />
+
+</merge>

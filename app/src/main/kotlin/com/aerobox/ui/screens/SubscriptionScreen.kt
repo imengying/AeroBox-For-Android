@@ -85,6 +85,7 @@ import com.aerobox.data.model.Subscription
 import com.aerobox.imports.ExternalImportParser
 import com.aerobox.imports.ExternalImportRequest
 import com.aerobox.ui.components.AppSnackbarHost
+import com.aerobox.ui.scanner.AeroBoxQrCaptureActivity
 import com.aerobox.utils.NetworkUtils
 import com.aerobox.viewmodel.SubscriptionViewModel
 import com.journeyapps.barcodescanner.ScanContract
@@ -474,6 +475,7 @@ fun SubscriptionScreen(
 
 private fun buildQrScanOptions(): ScanOptions {
     return ScanOptions().apply {
+        setCaptureActivity(AeroBoxQrCaptureActivity::class.java)
         setPrompt("扫描订阅或节点二维码")
         setDesiredBarcodeFormats(ScanOptions.QR_CODE)
         setBeepEnabled(false)

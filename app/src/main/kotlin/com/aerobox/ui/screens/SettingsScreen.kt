@@ -194,7 +194,7 @@ fun SettingsScreen(
                 onClick = { showDnsDialog = true },
                 icon = { Icon(AppIcons.Security, contentDescription = null) },
                 title = "DNS 服务器",
-                supporting = "远程: $remoteDns · 直连: $directDns",
+                supporting = "DNS 分流",
                 trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
             )
         }
