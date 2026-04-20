@@ -11,6 +11,7 @@ import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.Subscription
 import com.aerobox.data.model.SubscriptionType
 import com.aerobox.data.model.connectionFingerprint
+import com.aerobox.data.model.isLocalGroup
 import com.aerobox.data.model.matchScore
 import com.aerobox.data.model.normalizedDisplayName
 import com.aerobox.utils.PreferenceManager
@@ -41,6 +42,28 @@ data class SubscriptionImportResult(
     val diagnostics: ParseDiagnostics = ParseDiagnostics()
 )
 
+// Result of parsing inline content (local file / pasted text / single-node QR).
+// Nodes are not yet assigned to a group — callers pair this with an
+// [ImportGroupTarget] and call [SubscriptionRepository.commitLocalImport].
+data class PreparedLocalImport(
+    val nodes: List<ProxyNode>,
+    val resolvedName: String?,
+    val sourceType: SubscriptionType,
+    val trafficBytes: Long,
+    val expireTimestamp: Long,
+    val metadataFromHeader: Boolean,
+    val diagnostics: ParseDiagnostics
+)
+
+// Picker result used by local file / paste / single-node QR import flows.
+// Subscription-backed groups are not valid targets here (they are refreshed
+// from their remote URL, which would drop user-imported nodes).
+sealed class ImportGroupTarget {
+    data object Ungrouped : ImportGroupTarget()
+    data class Existing(val subscriptionId: Long) : ImportGroupTarget()
+    data class New(val name: String) : ImportGroupTarget()
+}
+
 internal class NoValidNodesException(
     val diagnostics: ParseDiagnostics
 ) : IllegalStateException(SubscriptionRepository.NO_VALID_NODES_ERROR)
@@ -58,6 +81,7 @@ class SubscriptionRepository(context: Context) {
         const val MIN_UPDATE_INTERVAL_MS = 15 * 60 * 1000L
         const val DEFAULT_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
         const val NO_VALID_NODES_ERROR = "NO_VALID_NODES"
+        const val LOCAL_GROUP_TARGET_INVALID_ERROR = "LOCAL_GROUP_TARGET_INVALID"
         private val COMMENT_METADATA_REGEX =
             Regex("""^\s*(#|//|;)\s*([A-Za-z-]+)\s*:\s*(.+?)\s*$""")
         private val SUPPORTED_COMMENT_METADATA_KEYS = setOf(
@@ -125,22 +149,24 @@ class SubscriptionRepository(context: Context) {
 
     fun getAllSubscriptions() = subscriptionDao.getAllSubscriptions()
 
-    suspend fun importExternalSource(
-        nameHint: String,
-        source: String,
-        autoUpdate: Boolean = false,
-        updateInterval: Long = DEFAULT_UPDATE_INTERVAL_MS
-    ): SubscriptionImportResult {
-        val trimmedSource = source.trim()
-        return if (isValidRemoteSubscriptionUrl(trimmedSource)) {
-            addSubscription(
-                name = nameHint,
-                url = trimmedSource,
-                autoUpdate = autoUpdate,
-                updateInterval = updateInterval
-            )
-        } else {
-            importLocalContent(nameHint, trimmedSource)
+    fun getLocalGroups() = subscriptionDao.getLocalGroups()
+
+    fun observeSubscriptionById(id: Long) = subscriptionDao.observeById(id)
+
+    fun observeNodesInGroup(subscriptionId: Long) =
+        proxyNodeDao.observeNodesBySubscription(subscriptionId)
+
+    suspend fun deleteNode(nodeId: Long) {
+        val node = proxyNodeDao.getNodeById(nodeId) ?: return
+        val selectedNodeId = PreferenceManager.lastSelectedNodeIdFlow(appContext).first()
+        database.withTransaction {
+            proxyNodeDao.deleteById(nodeId)
+            if (node.subscriptionId > 0L) {
+                recomputeLocalGroupCount(node.subscriptionId)
+            }
+        }
+        if (selectedNodeId == nodeId) {
+            PreferenceManager.setLastSelectedNodeId(appContext, 0L)
         }
     }
 
@@ -222,7 +248,15 @@ class SubscriptionRepository(context: Context) {
 
     suspend fun deleteSubscription(subscription: Subscription) {
         database.withTransaction {
-            proxyNodeDao.deleteBySubscription(subscription.id)
+            if (subscription.isLocalGroup()) {
+                // Preserve user-imported nodes by moving them back to the default bucket.
+                proxyNodeDao.reassignBySubscription(
+                    fromSubscriptionId = subscription.id,
+                    targetSubscriptionId = 0L
+                )
+            } else {
+                proxyNodeDao.deleteBySubscription(subscription.id)
+            }
             subscriptionDao.deleteById(subscription.id)
         }
         SubscriptionUpdateScheduler.reconfigure(appContext)
@@ -241,6 +275,9 @@ class SubscriptionRepository(context: Context) {
     }
 
     suspend fun updateSubscription(subscription: Subscription): SubscriptionUpdateResult {
+        if (subscription.isLocalGroup()) {
+            throw IllegalStateException("本地分组无法从远端刷新")
+        }
         val result = updateSubscriptionInternal(subscription)
         SubscriptionUpdateScheduler.reconfigure(appContext)
         return result
@@ -253,19 +290,41 @@ class SubscriptionRepository(context: Context) {
         autoUpdate: Boolean,
         updateInterval: Long
     ) {
+        val wasLocal = subscription.isLocalGroup()
         subscriptionDao.update(
             subscription.copy(
                 name = name,
-                url = url,
-                autoUpdate = autoUpdate,
+                // Local groups have no remote URL — preserve the empty marker so
+                // they never accidentally become refreshable subscriptions.
+                url = if (wasLocal) subscription.url else url,
+                autoUpdate = if (wasLocal) false else autoUpdate,
                 updateInterval = normalizeUpdateInterval(updateInterval)
             )
         )
         SubscriptionUpdateScheduler.reconfigure(appContext)
     }
 
+    suspend fun renameLocalGroup(subscription: Subscription, name: String) {
+        val trimmed = name.trim()
+        if (!subscription.isLocalGroup() || trimmed.isBlank()) return
+        subscriptionDao.update(subscription.copy(name = trimmed))
+    }
+
+    suspend fun createLocalGroup(name: String): Long {
+        val trimmed = name.trim().ifBlank { "本地分组" }
+        val subscription = Subscription(
+            name = trimmed,
+            url = "",
+            autoUpdate = false,
+            updateInterval = DEFAULT_UPDATE_INTERVAL_MS,
+            createdAt = System.currentTimeMillis()
+        )
+        return subscriptionDao.insert(subscription)
+    }
+
     suspend fun refreshAllSubscriptions(subscriptions: List<Subscription>): List<Result<SubscriptionUpdateResult>> {
-        val results = refreshSubscriptions(subscriptions)
+        val refreshable = subscriptions.filterNot { it.isLocalGroup() }
+        val results = refreshSubscriptions(refreshable)
         if (results.any { it.isSuccess }) {
             SubscriptionUpdateScheduler.reconfigure(appContext)
         }
@@ -324,64 +383,217 @@ class SubscriptionRepository(context: Context) {
         return findBestMatchingNode(node, subscriptionNodes)
     }
 
-    private suspend fun importLocalContent(
-        nameHint: String,
-        source: String
+    // Parse inline content without touching the database. Pair the result with
+    // an [ImportGroupTarget] and call [commitLocalImport] to finalise.
+    suspend fun prepareLocalImport(
+        source: String,
+        nameHint: String = ""
+    ): PreparedLocalImport {
+        val prepared = prepareInlineImport(source, nameHint)
+        return PreparedLocalImport(
+            nodes = prepared.nodes,
+            resolvedName = prepared.resolvedName,
+            sourceType = prepared.sourceType,
+            trafficBytes = prepared.trafficBytes,
+            expireTimestamp = prepared.expireTimestamp,
+            metadataFromHeader = prepared.metadataFromHeader,
+            diagnostics = prepared.diagnostics
+        )
+    }
+
+    suspend fun commitLocalImport(
+        prepared: PreparedLocalImport,
+        target: ImportGroupTarget
     ): SubscriptionImportResult {
         return runCatching {
-            val prepared = prepareInlineImport(source, nameHint)
-            val existingStandaloneFingerprints = proxyNodeDao.getNodesBySubscription(0L)
-                .asSequence()
-                .map { it.connectionFingerprint() }
-                .toSet()
-            val nodesToInsert = prepared.nodes
-                .filterNot { it.connectionFingerprint() in existingStandaloneFingerprints }
-                .mapIndexed { index, node ->
-                    val fallbackName = prepared.resolvedName
-                        ?.takeIf { prepared.nodes.size == 1 }
-                        ?: nameHint.takeIf { nameHint.isNotBlank() && prepared.nodes.size == 1 }
-                        ?: "导入节点 ${index + 1}"
-                    node.copy(
-                        name = node.name.ifBlank { fallbackName },
-                        subscriptionId = 0L
-                    )
-                }
-                .let { nodes -> assignFetchedNodeOrder(nodes, subscriptionId = 0L) }
-
-            if (nodesToInsert.isEmpty()) {
-                SubscriptionImportResult(
-                    subscriptionId = 0,
-                    nodeCount = 0,
-                    error = IllegalStateException("未导入新节点，可能已存在相同配置"),
-                    diagnostics = prepared.diagnostics
-                )
-            } else {
-                proxyNodeDao.insertAll(nodesToInsert)
-                logImportDiagnostics(
-                    action = "import",
-                    subscriptionName = nameHint.ifBlank { prepared.resolvedName ?: "inline-import" },
-                    diagnostics = prepared.diagnostics
-                )
-                SubscriptionImportResult(
-                    subscriptionId = 0,
-                    nodeCount = nodesToInsert.size,
-                    diagnostics = prepared.diagnostics
-                )
+            when (target) {
+                is ImportGroupTarget.Ungrouped -> commitToUngrouped(prepared)
+                is ImportGroupTarget.Existing -> commitToExistingLocalGroup(prepared, target.subscriptionId)
+                is ImportGroupTarget.New -> commitToNewLocalGroup(prepared, target.name)
             }
         }.getOrElse { error ->
-            val diagnostics = (error as? NoValidNodesException)?.diagnostics ?: ParseDiagnostics()
-            logImportDiagnostics(
-                action = "import",
-                subscriptionName = nameHint.ifBlank { "inline-import" },
-                diagnostics = diagnostics
-            )
             SubscriptionImportResult(
                 subscriptionId = 0,
                 nodeCount = 0,
                 error = error,
-                diagnostics = diagnostics
+                metadataFromHeader = prepared.metadataFromHeader,
+                diagnostics = prepared.diagnostics
             )
         }
+    }
+
+    suspend fun moveNodesToGroup(
+        nodeIds: List<Long>,
+        target: ImportGroupTarget
+    ): Result<Long> {
+        if (nodeIds.isEmpty()) return Result.success(0L)
+        return runCatching {
+            val targetId = when (target) {
+                is ImportGroupTarget.Ungrouped -> 0L
+                is ImportGroupTarget.Existing -> {
+                    val existing = subscriptionDao.getById(target.subscriptionId)
+                        ?: throw IllegalStateException("目标分组不存在")
+                    if (!existing.isLocalGroup()) {
+                        throw IllegalStateException(LOCAL_GROUP_TARGET_INVALID_ERROR)
+                    }
+                    existing.id
+                }
+                is ImportGroupTarget.New -> createLocalGroup(target.name)
+            }
+
+            val affectedSourceIds = nodeIds
+                .mapNotNull { proxyNodeDao.getNodeById(it)?.subscriptionId }
+                .toSet()
+
+            database.withTransaction {
+                proxyNodeDao.moveNodesToSubscription(nodeIds, targetId)
+                recomputeLocalGroupCount(targetId)
+                affectedSourceIds.forEach { sourceId ->
+                    if (sourceId != targetId) recomputeLocalGroupCount(sourceId)
+                }
+            }
+            targetId
+        }
+    }
+
+    private suspend fun commitToUngrouped(
+        prepared: PreparedLocalImport
+    ): SubscriptionImportResult {
+        val existingFingerprints = proxyNodeDao.getNodesBySubscription(0L)
+            .asSequence()
+            .map { it.connectionFingerprint() }
+            .toSet()
+        val nodes = prepareNodesForLocalGroup(
+            prepared = prepared,
+            subscriptionId = 0L,
+            existingFingerprints = existingFingerprints
+        )
+        return persistLocalImportNodes(
+            subscriptionId = 0L,
+            subscriptionName = prepared.resolvedName.orEmpty(),
+            nodes = nodes,
+            prepared = prepared
+        )
+    }
+
+    private suspend fun commitToExistingLocalGroup(
+        prepared: PreparedLocalImport,
+        subscriptionId: Long
+    ): SubscriptionImportResult {
+        val subscription = subscriptionDao.getById(subscriptionId)
+            ?: throw IllegalStateException("目标分组不存在")
+        if (!subscription.isLocalGroup()) {
+            throw IllegalStateException(LOCAL_GROUP_TARGET_INVALID_ERROR)
+        }
+
+        val existingFingerprints = proxyNodeDao.getNodesBySubscription(subscription.id)
+            .asSequence()
+            .map { it.connectionFingerprint() }
+            .toSet()
+        val nodes = prepareNodesForLocalGroup(
+            prepared = prepared,
+            subscriptionId = subscription.id,
+            existingFingerprints = existingFingerprints
+        )
+        return persistLocalImportNodes(
+            subscriptionId = subscription.id,
+            subscriptionName = subscription.name,
+            nodes = nodes,
+            prepared = prepared
+        )
+    }
+
+    private suspend fun commitToNewLocalGroup(
+        prepared: PreparedLocalImport,
+        name: String
+    ): SubscriptionImportResult {
+        val trimmedName = name.trim().ifBlank { prepared.resolvedName?.trim().orEmpty() }
+            .ifBlank { "本地分组" }
+        val subscriptionId = createLocalGroup(trimmedName)
+        val nodes = prepareNodesForLocalGroup(
+            prepared = prepared,
+            subscriptionId = subscriptionId,
+            existingFingerprints = emptySet()
+        )
+        if (nodes.isEmpty()) {
+            // Dedup yielded nothing — roll back the just-created group so we
+            // don't leave an empty ghost. (Only safe here because we created
+            // the group in this call; other paths must never delete.)
+            subscriptionDao.deleteById(subscriptionId)
+        }
+        return persistLocalImportNodes(
+            subscriptionId = subscriptionId.takeIf { nodes.isNotEmpty() } ?: 0L,
+            subscriptionName = trimmedName,
+            nodes = nodes,
+            prepared = prepared
+        )
+    }
+
+    private fun prepareNodesForLocalGroup(
+        prepared: PreparedLocalImport,
+        subscriptionId: Long,
+        existingFingerprints: Set<String>
+    ): List<ProxyNode> {
+        val nameHint = prepared.resolvedName
+        val total = prepared.nodes.size
+        val filtered = prepared.nodes
+            .filterNot { it.connectionFingerprint() in existingFingerprints }
+            .mapIndexed { index, node ->
+                val fallbackName = nameHint
+                    ?.takeIf { total == 1 }
+                    ?: "导入节点 ${index + 1}"
+                node.copy(
+                    name = node.name.ifBlank { fallbackName },
+                    subscriptionId = subscriptionId
+                )
+            }
+        return assignFetchedNodeOrder(filtered, subscriptionId)
+    }
+
+    private suspend fun persistLocalImportNodes(
+        subscriptionId: Long,
+        subscriptionName: String,
+        nodes: List<ProxyNode>,
+        prepared: PreparedLocalImport
+    ): SubscriptionImportResult {
+        if (nodes.isEmpty()) {
+            logImportDiagnostics(
+                action = "import",
+                subscriptionName = subscriptionName.ifBlank { "inline-import" },
+                diagnostics = prepared.diagnostics
+            )
+            return SubscriptionImportResult(
+                subscriptionId = subscriptionId,
+                nodeCount = 0,
+                error = IllegalStateException("未导入新节点，可能已存在相同配置"),
+                metadataFromHeader = prepared.metadataFromHeader,
+                diagnostics = prepared.diagnostics
+            )
+        }
+
+        database.withTransaction {
+            proxyNodeDao.insertAll(nodes)
+            if (subscriptionId > 0L) {
+                recomputeLocalGroupCount(subscriptionId)
+            }
+        }
+        logImportDiagnostics(
+            action = "import",
+            subscriptionName = subscriptionName.ifBlank { "inline-import" },
+            diagnostics = prepared.diagnostics
+        )
+        return SubscriptionImportResult(
+            subscriptionId = subscriptionId,
+            nodeCount = nodes.size,
+            metadataFromHeader = prepared.metadataFromHeader,
+            diagnostics = prepared.diagnostics
+        )
+    }
+
+    private suspend fun recomputeLocalGroupCount(subscriptionId: Long) {
+        if (subscriptionId <= 0L) return
+        val count = proxyNodeDao.countBySubscription(subscriptionId)
+        subscriptionDao.updateNodeCount(subscriptionId, count)
     }
 
     private suspend fun prepareSubscriptionImport(url: String): PreparedSubscriptionImport {
@@ -469,6 +681,7 @@ class SubscriptionRepository(context: Context) {
         }
 
     private fun shouldAutoUpdate(subscription: Subscription, now: Long): Boolean {
+        if (subscription.isLocalGroup()) return false
         if (!subscription.autoUpdate) return false
         val interval = normalizeUpdateInterval(subscription.updateInterval)
         if (subscription.updateTime <= 0L) return true
@@ -802,7 +1015,7 @@ class SubscriptionRepository(context: Context) {
         return normalizeUpdateInterval(hours * 60L * 60L * 1000L)
     }
 
-    private fun isValidRemoteSubscriptionUrl(url: String): Boolean {
+    fun isValidRemoteSubscriptionUrl(url: String): Boolean {
         return runCatching {
             val parsed = Uri.parse(url.trim())
             parsed.scheme.equals("https", ignoreCase = true) && !parsed.host.isNullOrBlank()

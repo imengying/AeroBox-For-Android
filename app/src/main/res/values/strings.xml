@@ -60,4 +60,19 @@
     <string name="connection_fix_failed">修复失败，请检查网络后重试</string>
     <string name="detecting_ip">检测中...</string>
     <string name="detecting_ip_later">稍后自动检测...</string>
+    <string name="import_choose_group">选择分组</string>
+    <string name="import_node_count">将导入 %1$d 个节点</string>
+    <string name="group_ungrouped">未分组</string>
+    <string name="group_new">新建分组</string>
+    <string name="group_new_name_hint">分组名称</string>
+    <string name="group_node_count_suffix">%1$d 个节点</string>
+    <string name="local_group_label">本地分组</string>
+    <string name="edit_group">编辑分组</string>
+    <string name="delete_group">删除分组</string>
+    <string name="delete_subscription_confirm">确定要删除「%1$s」及其所有节点吗？</string>
+    <string name="delete_local_group_confirm">确定要删除分组「%1$s」吗？其中的节点将移回未分组。</string>
+    <string name="rename_group">重命名分组</string>
+    <string name="delete_node">删除节点</string>
+    <string name="delete_node_confirm">确定要删除节点「%1$s」吗？</string>
+    <string name="group_empty_nodes">暂无节点</string>
 </resources>

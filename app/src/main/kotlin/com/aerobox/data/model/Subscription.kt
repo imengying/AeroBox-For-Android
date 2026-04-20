@@ -23,3 +23,9 @@ data class Subscription(
     val trafficBytes: Long = 0,
     val expireTimestamp: Long = 0
 )
+
+// A Subscription with a blank url is treated as a "local group" — a user-managed
+// container for nodes imported from local files, QR codes, or manual paste. These
+// groups do not participate in remote refresh and are the only valid targets for
+// moving manually-imported nodes.
+fun Subscription.isLocalGroup(): Boolean = url.isBlank()

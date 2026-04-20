@@ -6,10 +6,13 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aerobox.core.subscription.ParseDiagnostics
-import com.aerobox.data.repository.NoValidNodesException
 import com.aerobox.data.model.Subscription
-import com.aerobox.data.repository.SubscriptionRepository
+import com.aerobox.data.model.isLocalGroup
+import com.aerobox.data.repository.ImportGroupTarget
+import com.aerobox.data.repository.NoValidNodesException
+import com.aerobox.data.repository.PreparedLocalImport
 import com.aerobox.data.repository.SubscriptionImportResult
+import com.aerobox.data.repository.SubscriptionRepository
 import com.aerobox.data.repository.SubscriptionUpdateResult
 import com.aerobox.data.repository.SubscriptionUpdateSummary
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +29,24 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
+// Content that was successfully parsed but is waiting for the user to choose a
+// target local group. The UI observes this and shows GroupPickerDialog.
+data class PendingImport(
+    val prepared: PreparedLocalImport,
+    val suggestedName: String,
+    val nodeCount: Int
+)
+
+// A subscription URL was detected via QR scan or external intent. We defer the
+// actual fetch/import until the user confirms (and potentially renames it) in
+// the subscription editor dialog.
+data class PendingSubscriptionLink(
+    val url: String,
+    val suggestedName: String,
+    val autoUpdate: Boolean,
+    val updateInterval: Long
+)
+
 class SubscriptionViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private val repository = SubscriptionRepository(appContext)
@@ -33,11 +54,21 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     val subscriptions = repository.getAllSubscriptions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val localGroups = repository.getLocalGroups()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _uiMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val uiMessage: SharedFlow<String> = _uiMessage.asSharedFlow()
+
+    private val _pendingImport = MutableStateFlow<PendingImport?>(null)
+    val pendingImport: StateFlow<PendingImport?> = _pendingImport.asStateFlow()
+
+    private val _pendingSubscriptionLink = MutableStateFlow<PendingSubscriptionLink?>(null)
+    val pendingSubscriptionLink: StateFlow<PendingSubscriptionLink?> =
+        _pendingSubscriptionLink.asStateFlow()
 
     fun addSubscription(
         name: String,
@@ -74,6 +105,8 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     fun deleteSubscription(subscription: Subscription) {
         viewModelScope.launch {
             repository.deleteSubscription(subscription)
+            val tag = if (subscription.isLocalGroup()) "分组" else "订阅"
+            _uiMessage.tryEmit("已删除${tag}：${subscription.name}")
         }
     }
 
@@ -91,7 +124,8 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         autoUpdate: Boolean,
         updateInterval: Long
     ) {
-        if (!isValidSubscriptionUrl(url)) {
+        val isLocal = subscription.isLocalGroup()
+        if (!isLocal && !isValidSubscriptionUrl(url)) {
             _uiMessage.tryEmit("订阅链接无效，请使用 HTTPS 链接")
             return
         }
@@ -104,11 +138,16 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                 autoUpdate = autoUpdate,
                 updateInterval = updateInterval
             )
-            _uiMessage.tryEmit("订阅已修改：${name.ifBlank { subscription.name }}")
+            val tag = if (isLocal) "分组" else "订阅"
+            _uiMessage.tryEmit("已修改${tag}：${name.ifBlank { subscription.name }}")
         }
     }
 
     fun updateSubscription(subscription: Subscription) {
+        if (subscription.isLocalGroup()) {
+            _uiMessage.tryEmit("本地分组无需刷新")
+            return
+        }
         viewModelScope.launch {
             _isLoading.value = true
             val result = runCatching {
@@ -128,13 +167,14 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     fun updateAllSubscriptions() {
         viewModelScope.launch {
             val subs = subscriptions.value
-            if (subs.isEmpty()) {
-                _uiMessage.tryEmit("暂无订阅可更新")
+            val refreshable = subs.filterNot { it.isLocalGroup() }
+            if (refreshable.isEmpty()) {
+                _uiMessage.tryEmit("暂无可刷新的订阅")
                 return@launch
             }
 
             _isLoading.value = true
-            val results = repository.refreshAllSubscriptions(subs)
+            val results = repository.refreshAllSubscriptions(refreshable)
             val successResults = results.mapNotNull { it.getOrNull() }
             val successCount = successResults.size
             val failCount = results.size - successCount
@@ -176,6 +216,10 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    // Handles QR scan results and external VIEW intents. Subscription URLs are
+    // surfaced via [pendingSubscriptionLink] so the user can edit the name
+    // before committing. Inline node content goes via [pendingImport] for
+    // group selection.
     fun importExternalSource(
         source: String,
         nameHint: String = "",
@@ -188,19 +232,25 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             return
         }
 
+        if (repository.isValidRemoteSubscriptionUrl(trimmedSource)) {
+            _pendingSubscriptionLink.value = PendingSubscriptionLink(
+                url = trimmedSource,
+                suggestedName = nameHint.trim(),
+                autoUpdate = autoUpdate,
+                updateInterval = updateInterval
+            )
+            return
+        }
+
         viewModelScope.launch {
             _isLoading.value = true
-            val result = runCatching {
-                repository.importExternalSource(
-                    nameHint = nameHint.trim(),
-                    source = trimmedSource,
-                    autoUpdate = autoUpdate,
-                    updateInterval = updateInterval
-                )
-            }
-            result
-                .onSuccess { importResult ->
-                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+            runCatching { repository.prepareLocalImport(trimmedSource, nameHint.trim()) }
+                .onSuccess { prepared ->
+                    _pendingImport.value = PendingImport(
+                        prepared = prepared,
+                        suggestedName = nameHint.trim().ifBlank { prepared.resolvedName.orEmpty() },
+                        nodeCount = prepared.nodes.size
+                    )
                 }
                 .onFailure { error ->
                     _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
@@ -209,25 +259,35 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    // Called from NodeImportDialog — user has already picked a target in-dialog,
+    // so this runs prepare + commit without a separate picker step.
     fun importNodeContent(
         source: String,
-        nameHint: String = ""
+        target: ImportGroupTarget
     ) {
         val trimmedSource = source.trim()
         if (trimmedSource.isBlank()) {
             _uiMessage.tryEmit("节点内容为空")
             return
         }
-        if (isValidSubscriptionUrl(trimmedSource)) {
-            _uiMessage.tryEmit("订阅链接请使用“订阅链接”入口导入")
+        if (repository.isValidRemoteSubscriptionUrl(trimmedSource)) {
+            _uiMessage.tryEmit("订阅链接请使用\u201C订阅链接\u201D入口导入")
             return
         }
-        importExternalSource(
-            source = trimmedSource,
-            nameHint = nameHint,
-            autoUpdate = false,
-            updateInterval = SubscriptionRepository.DEFAULT_UPDATE_INTERVAL_MS
-        )
+        viewModelScope.launch {
+            _isLoading.value = true
+            runCatching {
+                val prepared = repository.prepareLocalImport(trimmedSource, nameHintFrom(target))
+                repository.commitLocalImport(prepared, target)
+            }
+                .onSuccess { importResult ->
+                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+                }
+                .onFailure { error ->
+                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                }
+            _isLoading.value = false
+        }
     }
 
     fun importLocalFile(uri: Uri) {
@@ -251,16 +311,17 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     ?.removePrefix("\uFEFF")
                     ?.trim()
                     ?: throw IllegalStateException("无法读取本地文件")
-                repository.importExternalSource(
-                    nameHint = displayName.orEmpty().substringBeforeLast('.'),
-                    source = content,
-                    autoUpdate = true,
-                    updateInterval = SubscriptionRepository.DEFAULT_UPDATE_INTERVAL_MS
-                )
+                val baseName = displayName.orEmpty().substringBeforeLast('.')
+                val prepared = repository.prepareLocalImport(content, baseName)
+                prepared to baseName
             }
             result
-                .onSuccess { importResult ->
-                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+                .onSuccess { (prepared, baseName) ->
+                    _pendingImport.value = PendingImport(
+                        prepared = prepared,
+                        suggestedName = baseName.ifBlank { prepared.resolvedName.orEmpty() },
+                        nodeCount = prepared.nodes.size
+                    )
                 }
                 .onFailure { error ->
                     _uiMessage.tryEmit("导入本地文件失败：${toFriendlyError(error)}")
@@ -269,19 +330,62 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun confirmPendingImport(target: ImportGroupTarget) {
+        val current = _pendingImport.value ?: return
+        _pendingImport.value = null
+        viewModelScope.launch {
+            _isLoading.value = true
+            runCatching { repository.commitLocalImport(current.prepared, target) }
+                .onSuccess { importResult ->
+                    _uiMessage.tryEmit(formatImportResultMessage(importResult))
+                }
+                .onFailure { error ->
+                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun cancelPendingImport() {
+        _pendingImport.value = null
+    }
+
+    fun confirmPendingSubscriptionLink(
+        name: String,
+        url: String,
+        autoUpdate: Boolean,
+        updateInterval: Long
+    ) {
+        _pendingSubscriptionLink.value = null
+        addSubscription(
+            name = name,
+            url = url,
+            autoUpdate = autoUpdate,
+            updateInterval = updateInterval
+        )
+    }
+
+    fun cancelPendingSubscriptionLink() {
+        _pendingSubscriptionLink.value = null
+    }
+
+    private fun nameHintFrom(target: ImportGroupTarget): String {
+        return when (target) {
+            is ImportGroupTarget.New -> target.name
+            is ImportGroupTarget.Existing -> ""
+            is ImportGroupTarget.Ungrouped -> ""
+        }
+    }
+
     private fun isValidSubscriptionUrl(url: String): Boolean {
-        return runCatching {
-            val parsed = Uri.parse(url.trim())
-            val scheme = parsed.scheme?.lowercase()
-            scheme == "https" && !parsed.host.isNullOrBlank()
-        }.getOrDefault(false)
+        return repository.isValidRemoteSubscriptionUrl(url)
     }
 
     private fun formatImportResultMessage(result: SubscriptionImportResult): String {
         val error = result.error
         if (error == null && result.nodeCount > 0) {
             val successPrefix = if (result.subscriptionId == 0L) {
-                "导入成功：已添加 ${result.nodeCount} 个未分组节点"
+                "导入成功：已添加 ${result.nodeCount} 个节点到未分组"
             } else {
                 "导入成功：${result.nodeCount} 个节点"
             }
@@ -297,8 +401,11 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             error?.message == SubscriptionRepository.NO_VALID_NODES_ERROR ->
                 "导入失败：${friendlyNoValidNodesMessage(result.diagnostics)}"
 
+            error?.message == SubscriptionRepository.LOCAL_GROUP_TARGET_INVALID_ERROR ->
+                "导入失败：订阅分组不可作为导入目标"
+
             error != null ->
-                "导入订阅失败：${toFriendlyError(error)}"
+                "导入失败：${toFriendlyError(error)}"
 
             else ->
                 "导入失败：${friendlyNoValidNodesMessage(result.diagnostics)}"
@@ -309,10 +416,12 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         return when (error) {
             is NoValidNodesException -> friendlyNoValidNodesMessage(error.diagnostics)
             is IllegalStateException ->
-                if (error.message == SubscriptionRepository.NO_VALID_NODES_ERROR) {
-                    "未解析到可用节点，请检查订阅格式"
-                } else {
-                    error.message?.takeIf { it.isNotBlank() } ?: "配置异常"
+                when (error.message) {
+                    SubscriptionRepository.NO_VALID_NODES_ERROR ->
+                        "未解析到可用节点，请检查订阅格式"
+                    SubscriptionRepository.LOCAL_GROUP_TARGET_INVALID_ERROR ->
+                        "订阅分组不可作为导入目标"
+                    else -> error.message?.takeIf { it.isNotBlank() } ?: "配置异常"
                 }
             is UnknownHostException -> "无法连接订阅服务器，请检查网络或链接"
             is SocketTimeoutException -> "连接超时，请稍后重试"

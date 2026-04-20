@@ -23,10 +23,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.aerobox.R
+import com.aerobox.ui.screens.GroupNodesScreen
 import com.aerobox.ui.screens.HomeScreen
 import com.aerobox.ui.screens.LicenseScreen
 import com.aerobox.ui.screens.LogScreen
@@ -124,8 +127,23 @@ fun AppNavigation(
             composable("subscriptions") {
                 SubscriptionScreen(
                     onNavigateBack = { navController.popBackStack() },
+                    onNavigateToGroupNodes = { groupId ->
+                        navController.navigate("group_nodes/$groupId") {
+                            launchSingleTop = true
+                        }
+                    },
                     pendingExternalImport = pendingExternalImport,
                     onExternalImportHandled = onExternalImportHandled
+                )
+            }
+            composable(
+                route = "group_nodes/{groupId}",
+                arguments = listOf(navArgument("groupId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getLong("groupId") ?: 0L
+                GroupNodesScreen(
+                    subscriptionId = groupId,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable("per_app_proxy") {

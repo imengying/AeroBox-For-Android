@@ -97,7 +97,7 @@ dependencies {
 
     implementation("androidx.datastore:datastore-preferences:1.2.1")
 
-    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("com.squareup.okhttp3:okhttp:5.3.3")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.yaml:snakeyaml:2.6")
