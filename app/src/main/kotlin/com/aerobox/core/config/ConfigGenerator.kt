@@ -194,7 +194,7 @@ object ConfigGenerator {
         serverDomainHint: String? = null
     ): JSONObject {
         // IPv6-only proxies need IPv6-first bootstrap resolution for remote DNS.
-        val remoteDnsStrategy = if (nodeIsIpv6Only) "prefer_ipv6" else ipv6Mode.domainStrategy()
+        val remoteDnsStrategy = if (nodeIsIpv6Only) "prefer_ipv6" else "ipv4_only"
         val localResolverServer = buildLocalPlatformDnsServer(
             tag = DNS_LOCAL_TAG
         )
@@ -242,7 +242,7 @@ object ConfigGenerator {
             .put("servers", servers)
             .put("final", DNS_REMOTE_TAG)
             .put("independent_cache", true)
-            .putDnsQueryStrategy(ipv6Mode)
+            .put("strategy", if (nodeIsIpv6Only) "prefer_ipv6" else "ipv4_only")
 
         val dnsRules = JSONArray()
         if (nodeIsIpv6Only) {
@@ -768,7 +768,7 @@ object ConfigGenerator {
                 put(
                     JSONObject()
                         .put("action", "resolve")
-                        .put("strategy", "prefer_ipv4")
+                        .put("strategy", "ipv4_only")
                 )
             }
 
