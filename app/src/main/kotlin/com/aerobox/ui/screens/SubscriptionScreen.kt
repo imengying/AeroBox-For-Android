@@ -113,6 +113,7 @@ fun SubscriptionScreen(
     val context = LocalContext.current
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val localGroups by viewModel.localGroups.collectAsStateWithLifecycle()
+    val ungroupedNodeCount by viewModel.ungroupedNodeCount.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
     val pendingSubscriptionLink by viewModel.pendingSubscriptionLink.collectAsStateWithLifecycle()
@@ -302,8 +303,9 @@ fun SubscriptionScreen(
                 }
             }
         }
-    ) { innerPadding ->
-        if (subscriptions.isEmpty()) {
+    } { innerPadding ->
+        val hasContent = subscriptions.isNotEmpty() || ungroupedNodeCount > 0
+        if (!hasContent) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -343,6 +345,16 @@ fun SubscriptionScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Virtual "未分组" card — shown when there are nodes with subscriptionId = 0
+                if (ungroupedNodeCount > 0) {
+                    item(key = "ungrouped") {
+                        UngroupedCard(
+                            nodeCount = ungroupedNodeCount,
+                            onClick = { onNavigateToGroupNodes(0L) }
+                        )
+                    }
+                }
+
                 items(orderedSubscriptions, key = { it.id }) { subscription ->
                     SubscriptionItem(
                         subscription = subscription,
@@ -771,6 +783,44 @@ private fun SubscriptionItem(
                     Icons.Filled.Delete,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UngroupedCard(
+    nodeCount: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.group_ungrouped),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.group_node_count_suffix, nodeCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

@@ -58,6 +58,7 @@ fun GroupNodesScreen(
     subscriptionId: Long,
     onNavigateBack: () -> Unit
 ) {
+    val isUngrouped = subscriptionId == 0L
     val context = LocalContext.current
     val repository = remember(context) { SubscriptionRepository(context) }
     val subscription by repository.observeSubscriptionById(subscriptionId)
@@ -72,18 +73,22 @@ fun GroupNodesScreen(
 
     // If the subscription row disappears (deleted elsewhere, or navigated here
     // with a stale id), bail back to the subscription list so the user isn't
-    // stranded on an empty screen.
+    // stranded on an empty screen.  Skip this check for the virtual ungrouped
+    // bucket (subscriptionId = 0) which has no backing Subscription row.
     var everLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(subscription) {
-        if (subscription != null) {
+        if (isUngrouped) {
+            everLoaded = true
+        } else if (subscription != null) {
             everLoaded = true
         } else if (everLoaded) {
             onNavigateBack()
         }
     }
 
-    val isLocal = subscription?.isLocalGroup() == true
-    val groupName = subscription?.name.orEmpty()
+    val isLocal = isUngrouped || subscription?.isLocalGroup() == true
+    val ungroupedLabel = stringResource(R.string.group_ungrouped)
+    val groupName = if (isUngrouped) ungroupedLabel else subscription?.name.orEmpty()
 
     Scaffold(
         topBar = {
@@ -101,7 +106,7 @@ fun GroupNodesScreen(
                     }
                 },
                 actions = {
-                    if (isLocal) {
+                    if (isLocal && !isUngrouped) {
                         IconButton(onClick = { showRenameDialog = true }) {
                             Icon(
                                 Icons.Filled.Edit,

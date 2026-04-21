@@ -108,9 +108,12 @@ fun PerAppProxyScreen(
 
     // Snapshot selected packages at screen open for stable sort order.
     // Selecting/deselecting an app won't cause it to jump in the list.
+    // We wait until the first app-list load completes (apps.isNotEmpty)
+    // so that selectedPackages has had time to be populated from DataStore;
+    // otherwise the snapshot would capture the stateIn initial emptySet().
     var initialSelectedPackages by remember { mutableStateOf<Set<String>?>(null) }
     LaunchedEffect(isLoadingApps, selectedPackages) {
-        if (initialSelectedPackages == null && !isLoadingApps) {
+        if (initialSelectedPackages == null && !isLoadingApps && apps.isNotEmpty()) {
             initialSelectedPackages = selectedPackages
         }
     }

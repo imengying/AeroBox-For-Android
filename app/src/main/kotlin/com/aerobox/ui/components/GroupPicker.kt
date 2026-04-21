@@ -1,22 +1,17 @@
 package com.aerobox.ui.components
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,7 +19,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -94,12 +88,24 @@ data class GroupPickerStateHolder(
 // Reusable section that lets the user pick where imported nodes should land.
 // Used both by the standalone [GroupPickerDialog] (shown after local-file /
 // QR / external import) and inline inside [NodeImportDialog].
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupPickerSection(
     holder: GroupPickerStateHolder,
     localGroups: List<Subscription>,
     modifier: Modifier = Modifier
 ) {
+    val ungroupedLabel = stringResource(R.string.group_ungrouped)
+    val newGroupLabel = stringResource(R.string.group_new)
+
+    val displayText = when (val opt = holder.state.option) {
+        is GroupPickerOption.Ungrouped -> ungroupedLabel
+        is GroupPickerOption.Existing -> opt.subscription.name
+        is GroupPickerOption.New -> newGroupLabel
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = stringResource(R.string.import_choose_group),
@@ -108,51 +114,64 @@ fun GroupPickerSection(
         )
         Spacer(Modifier.height(8.dp))
 
-        GroupOptionRow(
-            label = stringResource(R.string.group_ungrouped),
-            supporting = null,
-            selected = holder.state.option is GroupPickerOption.Ungrouped,
-            onSelect = { holder.onOptionChange(GroupPickerOption.Ungrouped) }
-        )
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it }
+        ) {
+            OutlinedTextField(
+                value = displayText,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+            )
 
-        if (localGroups.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth()
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
             ) {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 180.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp)
-                ) {
-                    localGroups.forEach { group ->
-                        val current = holder.state.option
-                        val selected = current is GroupPickerOption.Existing &&
-                            current.subscription.id == group.id
-                        GroupOptionRow(
-                            label = group.name,
-                            supporting = stringResource(
-                                R.string.group_node_count_suffix,
-                                group.nodeCount
-                            ),
-                            selected = selected,
-                            onSelect = { holder.onOptionChange(GroupPickerOption.Existing(group)) }
-                        )
+                // "未分组"
+                DropdownMenuItem(
+                    text = { Text(ungroupedLabel) },
+                    onClick = {
+                        holder.onOptionChange(GroupPickerOption.Ungrouped)
+                        expanded = false
                     }
+                )
+                // Existing local groups
+                localGroups.forEach { group ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "${group.name}（${stringResource(R.string.group_node_count_suffix, group.nodeCount)}）",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        onClick = {
+                            holder.onOptionChange(GroupPickerOption.Existing(group))
+                            expanded = false
+                        }
+                    )
                 }
+                // "新建分组"
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = newGroupLabel,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    onClick = {
+                        holder.onOptionChange(GroupPickerOption.New)
+                        expanded = false
+                    }
+                )
             }
         }
-
-        Spacer(Modifier.height(4.dp))
-        GroupOptionRow(
-            label = stringResource(R.string.group_new),
-            supporting = null,
-            selected = holder.state.option is GroupPickerOption.New,
-            onSelect = { holder.onOptionChange(GroupPickerOption.New) }
-        )
 
         if (holder.state.option is GroupPickerOption.New) {
             Spacer(Modifier.height(8.dp))
@@ -164,40 +183,6 @@ fun GroupPickerSection(
                 isError = holder.state.newGroupName.isBlank(),
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-    }
-}
-
-@Composable
-private fun GroupOptionRow(
-    label: String,
-    supporting: String?,
-    selected: Boolean,
-    onSelect: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onSelect)
-            .padding(vertical = 6.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Spacer(Modifier.height(0.dp))
-        Column(modifier = Modifier.padding(start = 4.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (supporting != null) {
-                Text(
-                    text = supporting,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

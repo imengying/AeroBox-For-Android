@@ -19,9 +19,7 @@ class AppListRepository(context: Context) {
     @Volatile
     private var cachedApps: List<InstalledAppInfo>? = null
 
-    @Suppress("UNUSED_PARAMETER")
     suspend fun getInstalledApps(
-        explicitPackages: Set<String> = emptySet(),
         forceRefresh: Boolean = false
     ): List<InstalledAppInfo> {
         cachedApps?.takeIf { !forceRefresh }?.let { return it }
@@ -46,8 +44,7 @@ class AppListRepository(context: Context) {
                     packageName = info.packageName,
                     isSystem = info.applicationInfo.isSystemApp(),
                     hasInternetPermission = info.requestedPermissions
-                        ?.contains(Manifest.permission.INTERNET) == true,
-                    lastUpdateTime = info.lastUpdateTime
+                        ?.contains(Manifest.permission.INTERNET) == true
                 )
             }
             .sortedWith(

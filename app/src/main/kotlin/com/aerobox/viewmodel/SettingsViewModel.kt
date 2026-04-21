@@ -247,10 +247,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isLoadingInstalledApps.value = true
             runCatching {
-                appListRepository.getInstalledApps(
-                    explicitPackages = explicitPackages,
-                    forceRefresh = forceRefresh
-                )
+                appListRepository.getInstalledApps(forceRefresh = forceRefresh)
             }.onSuccess { apps ->
                 _installedApps.value = apps
             }.onFailure {

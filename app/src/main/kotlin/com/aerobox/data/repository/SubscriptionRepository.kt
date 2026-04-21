@@ -146,6 +146,8 @@ class SubscriptionRepository(context: Context) {
 
     fun getLocalGroups() = subscriptionDao.getLocalGroups()
 
+    fun observeUngroupedNodeCount() = proxyNodeDao.observeUngroupedNodeCount()
+
     fun observeSubscriptionById(id: Long) = subscriptionDao.observeById(id)
 
     fun observeNodesInGroup(subscriptionId: Long) =

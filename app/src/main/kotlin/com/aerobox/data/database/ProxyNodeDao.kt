@@ -24,6 +24,9 @@ interface ProxyNodeDao {
     @Query("SELECT COUNT(*) FROM proxy_nodes WHERE subscriptionId = :subscriptionId")
     suspend fun countBySubscription(subscriptionId: Long): Int
 
+    @Query("SELECT COUNT(*) FROM proxy_nodes WHERE subscriptionId = 0")
+    fun observeUngroupedNodeCount(): Flow<Int>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(nodes: List<ProxyNode>)
 
