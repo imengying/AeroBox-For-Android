@@ -570,40 +570,39 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             listOf(ipv4Endpoints, ipv6Endpoints)
         }
 
-        try {
-            for (group in endpointGroups) {
-                val detected = supervisorScope {
-                    val uniqueEndpoints = group.distinct()
-                    val resultChannel = Channel<String?>(capacity = uniqueEndpoints.size)
-                    val jobs = uniqueEndpoints.map { endpoint ->
-                        launch {
-                            resultChannel.trySend(fetchIpFromEndpoint(client, endpoint))
-                        }
-                    }
-
-                    try {
-                        repeat(jobs.size) {
-                            val ip = resultChannel.receive()
-                            if (!ip.isNullOrBlank()) {
-                                return@supervisorScope ip
-                            }
-                        }
-                        null
-                    } finally {
-                        jobs.forEach { it.cancel() }
-                        resultChannel.close()
+        for (group in endpointGroups) {
+            val detected = supervisorScope {
+                val uniqueEndpoints = group.distinct()
+                val resultChannel = Channel<String?>(capacity = uniqueEndpoints.size)
+                val jobs = uniqueEndpoints.map { endpoint ->
+                    launch {
+                        resultChannel.trySend(fetchIpFromEndpoint(client, endpoint))
                     }
                 }
 
-                if (!detected.isNullOrBlank()) {
-                    return@withContext detected
+                try {
+                    repeat(jobs.size) {
+                        val ip = resultChannel.receive()
+                        if (!ip.isNullOrBlank()) {
+                            return@supervisorScope ip
+                        }
+                    }
+                    null
+                } finally {
+                    jobs.forEach { it.cancel() }
+                    resultChannel.close()
                 }
             }
-            appContext.getString(com.aerobox.R.string.detect_failed_tap_retry)
+
+            if (!detected.isNullOrBlank()) {
+                return@withContext detected
+            }
         }
+
         // NOTE: do NOT call dispatcher.cancelAll() here — a new detection round
         // may already be in-flight on the same ipCheckClient.  Individual OkHttp
         // calls are cancelled via invokeOnCancellation in fetchIpFromEndpoint.
+        appContext.getString(com.aerobox.R.string.detect_failed_tap_retry)
     }
 
     private suspend fun fetchIpFromEndpoint(client: OkHttpClient, endpoint: String): String? =

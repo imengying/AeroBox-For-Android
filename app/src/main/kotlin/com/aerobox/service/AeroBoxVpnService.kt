@@ -29,7 +29,6 @@ import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SystemProxyStatus
-import io.nekohasekai.libbox.RouteAddressIterator
 import io.nekohasekai.libbox.TunOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -597,14 +596,54 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     }
 
     private fun drainRouteAddresses(
-        iterator: RouteAddressIterator
+        iterator: Any
     ): List<Pair<String, Int>> {
         val result = mutableListOf<Pair<String, Int>>()
-        while (iterator.hasNext()) {
-            val addr = iterator.next()
-            result += addr.address() to addr.prefix()
+        while (iteratorHasNext(iterator)) {
+            val addr = iteratorNext(iterator) ?: break
+            val address = readStringMember(addr, "address") ?: continue
+            val prefix = readIntMember(addr, "prefix") ?: continue
+            result += address to prefix
         }
         return result
+    }
+
+    private fun resolveNoArgMember(target: Any, memberName: String): Any? {
+        val getterName = "get" + memberName.replaceFirstChar { it.uppercaseChar() }
+        return runCatching {
+            target.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && (method.name == memberName || method.name == getterName)
+            }?.invoke(target)
+        }.getOrNull()
+    }
+
+    private fun iteratorHasNext(iterator: Any): Boolean {
+        return runCatching {
+            iterator.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && method.name == "hasNext"
+            }?.invoke(iterator) as? Boolean
+        }.getOrNull() == true
+    }
+
+    private fun iteratorNext(iterator: Any): Any? {
+        return runCatching {
+            iterator.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 && method.name == "next"
+            }?.invoke(iterator)
+        }.getOrNull()
+    }
+
+    private fun readStringMember(target: Any, memberName: String): String? {
+        return resolveNoArgMember(target, memberName)?.toString()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun readIntMember(target: Any, memberName: String): Int? {
+        val value = resolveNoArgMember(target, memberName) ?: return null
+        return when (value) {
+            is Int -> value
+            is Number -> value.toInt()
+            else -> value.toString().toIntOrNull()
+        }
     }
 
     // ─── Notification ───
