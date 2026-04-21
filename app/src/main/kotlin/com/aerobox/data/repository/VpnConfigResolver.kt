@@ -59,7 +59,7 @@ class VpnConfigResolver(private val context: Context) {
         preferencesOverride: PreferenceManager.VpnConfigPreferences? = null
     ): String {
         val nodeName = node.name.ifBlank { "unnamed node" }
-        Log.w(TAG, "Generating config for $nodeName [${node.type.name}]")
+        Log.i(TAG, "Generating config for $nodeName [${node.type.name}]")
         RuntimeLogBuffer.append("info", "Generating config for $nodeName [${node.type.name}]")
         val prefs = preferencesOverride ?: PreferenceManager.readVpnConfigPreferences(context)
         if (prefs.enableGeoRules) {

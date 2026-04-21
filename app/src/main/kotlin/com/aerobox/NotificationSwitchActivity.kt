@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -151,7 +152,7 @@ private fun NotificationSwitchDialog(
                 }.thenBy { (subId, _) ->
                     if (subId == 0L || !nameMap.containsKey(subId)) 1 else 0
                 }.thenBy { (subId, _) ->
-                    nameMap[subId] ?: "未分组"
+                    nameMap[subId] ?: AeroBoxApplication.appInstance.getString(R.string.group_ungrouped)
                 }
             )
     }
@@ -181,7 +182,7 @@ private fun NotificationSwitchDialog(
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = "切换节点",
+                    text = stringResource(R.string.switch_node_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
@@ -196,7 +197,8 @@ private fun NotificationSwitchDialog(
                 ) {
                     items(count = groupedNodes.size) { index ->
                         val (subId, _) = groupedNodes[index]
-                        val groupName = subscriptions.firstOrNull { it.id == subId }?.name ?: "未分组"
+                        val groupName = subscriptions.firstOrNull { it.id == subId }?.name
+                            ?: stringResource(R.string.group_ungrouped)
                         FilterChip(
                             selected = selectedGroupIndex == index,
                             onClick = { selectedGroupIndex = index },
@@ -245,7 +247,7 @@ private fun NotificationSwitchDialog(
                                     Text(
                                         text = buildString {
                                             append(node.type.displayName())
-                                            if (isSelected) append(" · 当前")
+                                            if (isSelected) append(stringResource(R.string.node_current_suffix))
                                         },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -262,7 +264,7 @@ private fun NotificationSwitchDialog(
                     onClick = onDismiss,
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         }

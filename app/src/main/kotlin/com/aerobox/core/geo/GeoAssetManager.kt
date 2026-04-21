@@ -5,8 +5,8 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
 import okhttp3.Request
+import com.aerobox.core.network.SharedHttpClient
 import org.json.JSONObject
 import org.tukaani.xz.XZInputStream
 import java.io.File
@@ -45,10 +45,9 @@ object GeoAssetManager {
     private const val GEOIP_VERSION_FILE = "geoip.version.txt"
     private const val GEOSITE_VERSION_FILE = "geosite.version.txt"
 
-    private val client = OkHttpClient.Builder()
+    private val client = SharedHttpClient.base.newBuilder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
-        .followRedirects(true)
         .build()
 
     fun getGeoDir(context: Context): File {

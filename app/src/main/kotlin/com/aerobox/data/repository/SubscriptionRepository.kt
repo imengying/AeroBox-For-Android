@@ -25,12 +25,12 @@ import kotlinx.coroutines.sync.withPermit
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Headers
-import okhttp3.OkHttpClient
 import okhttp3.Request
+import com.aerobox.core.network.SharedHttpClient
 import okhttp3.Response
 import java.io.IOException
 import java.util.Base64
-import java.util.concurrent.TimeUnit
+
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -95,12 +95,7 @@ class SubscriptionRepository(context: Context) {
         private val CONTENT_DISPOSITION_FILENAME_REGEX =
             Regex("""filename\s*=\s*"?([^";]+)"?""", RegexOption.IGNORE_CASE)
 
-        internal val sharedClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build()
-        }
+        internal val sharedClient get() = SharedHttpClient.base
     }
 
     private data class SubscriptionFetchResult(

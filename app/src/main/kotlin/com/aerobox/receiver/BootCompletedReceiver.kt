@@ -4,9 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.aerobox.core.connection.ConnectionDiagnostics
-import com.aerobox.data.repository.VpnConnectionResult
-import com.aerobox.data.repository.VpnRepository
+import androidx.core.content.ContextCompat
+import com.aerobox.service.AeroBoxVpnService
 import com.aerobox.utils.PreferenceManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,31 +18,31 @@ class BootCompletedReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) {
+            Log.w(TAG, "Ignoring unexpected action: ${intent?.action}")
+            return
+        }
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            runCatching {
+            try {
                 val autoConnect = PreferenceManager.autoConnectFlow(context).first()
-                if (!autoConnect) return@runCatching
-                if (android.net.VpnService.prepare(context) != null) return@runCatching
+                if (!autoConnect) return@launch
+                if (android.net.VpnService.prepare(context) != null) return@launch
 
-                when (val result = VpnRepository(context).connectSelectedNode()) {
-                    is VpnConnectionResult.Success -> Unit
-                    VpnConnectionResult.NoNodeAvailable -> Unit
-                    is VpnConnectionResult.InvalidConfig,
-                    is VpnConnectionResult.Failure -> {
-                        Log.w(
-                            TAG,
-                            ConnectionDiagnostics.logFailureMessage(
-                                result,
-                                "Auto-connect failed after boot"
-                            )
-                        )
-                    }
+                // Delegate heavy work (config build, geo check) to the foreground
+                // VPN service.  The service's prepareStartRequest() will resolve the
+                // selected node and build the config safely, avoiding the goAsync()
+                // ANR window (~10-30 s) that connectSelectedNode() could exceed.
+                val startIntent = Intent(context, AeroBoxVpnService::class.java).apply {
+                    action = AeroBoxVpnService.ACTION_START
                 }
+                ContextCompat.startForegroundService(context, startIntent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Auto-connect failed after boot", e)
+            } finally {
+                pendingResult.finish()
             }
-            pendingResult.finish()
         }
     }
 }

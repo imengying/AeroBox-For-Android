@@ -29,6 +29,7 @@ import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SystemProxyStatus
+import io.nekohasekai.libbox.RouteAddressIterator
 import io.nekohasekai.libbox.TunOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,7 +135,7 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     }
 
     private fun logInfo(message: String) {
-        Log.w(TAG, message)
+        Log.i(TAG, message)
         RuntimeLogBuffer.append("info", message)
     }
 
@@ -477,20 +478,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             .setMtu(options.mtu)
 
         // Read addresses
-        val inet4Addresses = mutableListOf<Pair<String, Int>>()
-        val inet4Address = options.inet4Address
-        while (inet4Address.hasNext()) {
-            val addr = inet4Address.next()
-            inet4Addresses.add(addr.address() to addr.prefix())
-        }
+        val inet4Addresses = drainRouteAddresses(options.inet4Address)
         inet4Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
-        val inet6Addresses = mutableListOf<Pair<String, Int>>()
-        val inet6Address = options.inet6Address
-        while (inet6Address.hasNext()) {
-            val addr = inet6Address.next()
-            inet6Addresses.add(addr.address() to addr.prefix())
-        }
+        val inet6Addresses = drainRouteAddresses(options.inet6Address)
         inet6Addresses.forEach { (address, prefix) -> builder.addAddress(address, prefix) }
 
         hasIpv6Tun = inet6Addresses.isNotEmpty()
@@ -507,26 +498,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }
 
         if (options.autoRoute) {
-            val inet4Routes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                readTunAddressList(options, "inet4RouteAddress")
-            } else {
-                readTunAddressList(options, "inet4RouteRange")
-            }
-            val inet6Routes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                readTunAddressList(options, "inet6RouteAddress")
-            } else {
-                readTunAddressList(options, "inet6RouteRange")
-            }
-            val inet4ExcludedRoutes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                readTunAddressList(options, "inet4RouteExcludeAddress")
-            } else {
-                emptyList()
-            }
-            val inet6ExcludedRoutes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                readTunAddressList(options, "inet6RouteExcludeAddress")
-            } else {
-                emptyList()
-            }
+            val inet4Routes = drainRouteAddresses(options.inet4RouteAddress)
+            val inet6Routes = drainRouteAddresses(options.inet6RouteAddress)
+            val inet4ExcludedRoutes = drainRouteAddresses(options.inet4RouteExcludeAddress)
+            val inet6ExcludedRoutes = drainRouteAddresses(options.inet6RouteExcludeAddress)
             val vpnDns = options.dnsServerAddress.value.trim().takeIf { it.isNotEmpty() }
 
             vpnDns?.let { builder.addDnsServer(it) }
@@ -621,54 +596,15 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         }.getOrNull()
     }
 
-    private fun readTunAddressList(options: TunOptions, memberName: String): List<Pair<String, Int>> {
-        val iterator = resolveNoArgMember(options, memberName) ?: return emptyList()
-        val pairs = mutableListOf<Pair<String, Int>>()
-        while (iteratorHasNext(iterator)) {
-            val item = iteratorNext(iterator) ?: break
-            val address = readStringMember(item, "address") ?: continue
-            val prefix = readIntMember(item, "prefix") ?: continue
-            pairs += address to prefix
+    private fun drainRouteAddresses(
+        iterator: RouteAddressIterator
+    ): List<Pair<String, Int>> {
+        val result = mutableListOf<Pair<String, Int>>()
+        while (iterator.hasNext()) {
+            val addr = iterator.next()
+            result += addr.address() to addr.prefix()
         }
-        return pairs
-    }
-
-    private fun resolveNoArgMember(target: Any, memberName: String): Any? {
-        val getterName = "get" + memberName.replaceFirstChar { it.uppercaseChar() }
-        return runCatching {
-            target.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && (method.name == memberName || method.name == getterName)
-            }?.invoke(target)
-        }.getOrNull()
-    }
-
-    private fun iteratorHasNext(iterator: Any): Boolean {
-        return runCatching {
-            iterator.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && method.name == "hasNext"
-            }?.invoke(iterator) as? Boolean
-        }.getOrNull() == true
-    }
-
-    private fun iteratorNext(iterator: Any): Any? {
-        return runCatching {
-            iterator.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && method.name == "next"
-            }?.invoke(iterator)
-        }.getOrNull()
-    }
-
-    private fun readStringMember(target: Any, memberName: String): String? {
-        return resolveNoArgMember(target, memberName)?.toString()?.takeIf { it.isNotBlank() }
-    }
-
-    private fun readIntMember(target: Any, memberName: String): Int? {
-        val value = resolveNoArgMember(target, memberName) ?: return null
-        return when (value) {
-            is Int -> value
-            is Number -> value.toInt()
-            else -> value.toString().toIntOrNull()
-        }
+        return result
     }
 
     // ─── Notification ───

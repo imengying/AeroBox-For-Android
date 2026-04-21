@@ -75,4 +75,10 @@
     <string name="delete_node">删除节点</string>
     <string name="delete_node_confirm">确定要删除节点「%1$s」吗？</string>
     <string name="group_empty_nodes">暂无节点</string>
+    <string name="switch_node_title">切换节点</string>
+    <string name="detect_failed_tap_retry">检测失败，点击重试</string>
+    <string name="tap_detect_exit_ip">点击检测出口 IP</string>
+    <string name="switched_to_mode">已切换为%1$s</string>
+    <string name="subscription_refreshed_new_node">订阅更新后，已使用匹配的新节点：%1$s</string>
+    <string name="node_current_suffix"> · 当前</string>
 </resources>

@@ -91,6 +91,8 @@ object LocalResolverTransport : LocalDNSTransport {
         }
 
         if (type != null) {
+            // 5-arg overload: query(Network?, String, int, int, Executor, CancellationSignal, Callback)
+            // Resolves only A or AAAA records based on the explicit type.
             DnsResolver.getInstance().query(
                 DefaultNetworkMonitor.defaultNetwork,
                 domain,
@@ -101,6 +103,8 @@ object LocalResolverTransport : LocalDNSTransport {
                 callback
             )
         } else {
+            // 4-arg overload: query(Network?, String, int, Executor, CancellationSignal, Callback)
+            // No type parameter — lets the system resolve both A and AAAA.
             DnsResolver.getInstance().query(
                 DefaultNetworkMonitor.defaultNetwork,
                 domain,

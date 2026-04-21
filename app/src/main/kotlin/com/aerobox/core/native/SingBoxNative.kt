@@ -46,6 +46,11 @@ object SingBoxNative {
      * Validate a sing-box JSON config. Returns null on success, error message on failure.
      */
     fun checkConfig(configContent: String): String? {
+        if (!initialized) {
+            val msg = "libbox not initialized — cannot validate config"
+            Log.e(TAG, msg)
+            return msg
+        }
         return try {
             Libbox.checkConfig(configContent)
             null // success
@@ -60,6 +65,7 @@ object SingBoxNative {
      * Get the sing-box version string.
      */
     fun getVersion(): String {
+        if (!initialized) return "unknown (not initialized)"
         return try {
             Libbox.version()
         } catch (e: Exception) {
@@ -73,6 +79,11 @@ object SingBoxNative {
         testUrl: String = "http://cp.cloudflare.com/",
         timeoutMs: Int = 3000
     ): Int {
+        if (!initialized) {
+            Log.e(TAG, "libbox not initialized — cannot run URL test")
+            RuntimeLogBuffer.append("error", "libbox not initialized — cannot run URL test")
+            return -1
+        }
         return try {
             Libbox.urlTestOutbound(configContent, outboundTag, testUrl, timeoutMs)
         } catch (e: Exception) {
@@ -89,6 +100,10 @@ object SingBoxNative {
         logErrors: Boolean = true
     ): OutboundTrafficStats? {
         if (outboundTags.isEmpty()) return OutboundTrafficStats(0L, 0L)
+        if (!initialized) {
+            if (logErrors) Log.e(TAG, "libbox not initialized — cannot query stats")
+            return null
+        }
         return try {
             val raw = Libbox.queryV2RayOutboundStats(
                 apiAddress,

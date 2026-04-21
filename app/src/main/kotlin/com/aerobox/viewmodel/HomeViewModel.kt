@@ -79,6 +79,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val nodeDao = AeroBoxApplication.database.proxyNodeDao()
     private val vpnRepository = AeroBoxApplication.vpnRepository
     private val subscriptionRepository = SubscriptionRepository(appContext)
+    // Standalone instance — intentionally NOT derived from SharedHttpClient so that
+    // dispatcher.cancelAll() in onCleared() / fetchPublicIp() does not cancel
+    // subscription refreshes or Geo-asset downloads running on the shared pool.
     private val ipCheckClient = OkHttpClient.Builder()
         .callTimeout(5, TimeUnit.SECONDS)
         .connectTimeout(3, TimeUnit.SECONDS)
@@ -140,7 +143,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionDuration = MutableStateFlow("00:00:00")
     val connectionDuration: StateFlow<String> = _connectionDuration.asStateFlow()
 
-    private val _detectedIp = MutableStateFlow("点击检测出口 IP")
+    private val _detectedIp = MutableStateFlow(appContext.getString(com.aerobox.R.string.tap_detect_exit_ip))
     val detectedIp: StateFlow<String> = _detectedIp.asStateFlow()
 
     private val _connectionIssue = MutableStateFlow<ConnectionIssue?>(null)
@@ -249,7 +252,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         return when (val result = vpnRepository.switchToNode(currentNode)) {
             is VpnConnectionResult.Success -> {
-                _uiMessage.tryEmit("已切换为${mode.displayName}")
+                _uiMessage.tryEmit(appContext.getString(com.aerobox.R.string.switched_to_mode, mode.displayName))
                 true
             }
 
@@ -309,7 +312,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     _selectedNode.value = result.node
                     PreferenceManager.setLastSelectedNodeId(appContext, result.node.id)
                     if (result.node.id != node.id) {
-                        _uiMessage.tryEmit("订阅更新后，已使用匹配的新节点：${result.node.name}")
+                        _uiMessage.tryEmit(appContext.getString(com.aerobox.R.string.subscription_refreshed_new_node, result.node.name))
                     }
                     startConnectWatchdog(context)
                 }
@@ -596,11 +599,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     return@withContext detected
                 }
             }
-            "检测失败，点击重试"
-        } finally {
-            client.dispatcher.cancelAll()
-            client.connectionPool.evictAll()
+            appContext.getString(com.aerobox.R.string.detect_failed_tap_retry)
         }
+        // NOTE: do NOT call dispatcher.cancelAll() here — a new detection round
+        // may already be in-flight on the same ipCheckClient.  Individual OkHttp
+        // calls are cancelled via invokeOnCancellation in fetchIpFromEndpoint.
     }
 
     private suspend fun fetchIpFromEndpoint(client: OkHttpClient, endpoint: String): String? =
