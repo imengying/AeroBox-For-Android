@@ -58,6 +58,9 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     val localGroups = repository.getLocalGroups()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val ungroupedNodeCount = repository.observeUngroupedNodeCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
