@@ -44,7 +44,7 @@ class AeroBoxApplication : Application() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            "AeroBox",
+            getString(R.string.app_name),
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

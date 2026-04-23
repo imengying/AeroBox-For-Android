@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -149,8 +151,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionIssue = MutableStateFlow<ConnectionIssue?>(null)
     val connectionIssue: StateFlow<ConnectionIssue?> = _connectionIssue.asStateFlow()
 
-    private val _memoryUsage = MutableStateFlow("--")
-    val memoryUsage: StateFlow<String> = _memoryUsage.asStateFlow()
+    // Polls memory info every 15s, but only while something is observing
+    // (e.g., HomeScreen is visible).  Stops automatically when there are no
+    // collectors, saving CPU/battery when the app is in the background.
+    val memoryUsage: StateFlow<String> = flow {
+        while (true) {
+            emit(readMemoryUsage())
+            delay(15_000)
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "--")
 
     private val _uiMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val uiMessage: SharedFlow<String> = _uiMessage.asSharedFlow()
@@ -170,7 +181,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         observeSelectedNode()
         observeConnectionDuration()
         observeNetworkInfoTriggers()
-        observeMemoryUsage()
         refreshNetworkInfo()
     }
 
@@ -222,15 +232,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-
-    private fun observeMemoryUsage() {
-        viewModelScope.launch(Dispatchers.Default) {
-            while (isActive) {
-                _memoryUsage.value = readMemoryUsage()
-                delay(15_000)
-            }
-        }
-    }
 
     private fun readMemoryUsage(): String {
         return runCatching {

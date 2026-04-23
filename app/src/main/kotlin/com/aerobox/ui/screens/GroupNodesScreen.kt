@@ -106,7 +106,7 @@ fun GroupNodesScreen(
                     }
                 },
                 actions = {
-                    if (isLocal && !isUngrouped) {
+                    if (isLocal) {
                         IconButton(onClick = { showRenameDialog = true }) {
                             Icon(
                                 Icons.Filled.Edit,

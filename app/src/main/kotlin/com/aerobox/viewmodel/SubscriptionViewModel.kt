@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aerobox.R
 import com.aerobox.core.subscription.ParseDiagnostics
 import com.aerobox.data.model.Subscription
 import com.aerobox.data.model.isLocalGroup
@@ -57,9 +58,6 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     val localGroups = repository.getLocalGroups()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val ungroupedNodeCount = repository.observeUngroupedNodeCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -80,7 +78,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         updateInterval: Long
     ) {
         if (!isValidSubscriptionUrl(url)) {
-            _uiMessage.tryEmit("订阅链接无效，请使用 HTTPS 链接")
+            _uiMessage.tryEmit(appContext.getString(R.string.subscription_link_invalid))
             return
         }
 
@@ -99,7 +97,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     _uiMessage.tryEmit(formatImportResultMessage(importResult))
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("导入订阅失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.import_subscription_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -108,8 +106,10 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     fun deleteSubscription(subscription: Subscription) {
         viewModelScope.launch {
             repository.deleteSubscription(subscription)
-            val tag = if (subscription.isLocalGroup()) "分组" else "订阅"
-            _uiMessage.tryEmit("已删除${tag}：${subscription.name}")
+            val tag = appContext.getString(
+                if (subscription.isLocalGroup()) R.string.group_noun else R.string.subscription_noun
+            )
+            _uiMessage.tryEmit(appContext.getString(R.string.deleted_item_format, tag, subscription.name))
         }
     }
 
@@ -129,7 +129,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     ) {
         val isLocal = subscription.isLocalGroup()
         if (!isLocal && !isValidSubscriptionUrl(url)) {
-            _uiMessage.tryEmit("订阅链接无效，请使用 HTTPS 链接")
+            _uiMessage.tryEmit(appContext.getString(R.string.subscription_link_invalid))
             return
         }
 
@@ -141,14 +141,22 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                 autoUpdate = autoUpdate,
                 updateInterval = updateInterval
             )
-            val tag = if (isLocal) "分组" else "订阅"
-            _uiMessage.tryEmit("已修改${tag}：${name.ifBlank { subscription.name }}")
+            val tag = appContext.getString(
+                if (isLocal) R.string.group_noun else R.string.subscription_noun
+            )
+            _uiMessage.tryEmit(
+                appContext.getString(
+                    R.string.modified_item_format,
+                    tag,
+                    name.ifBlank { subscription.name }
+                )
+            )
         }
     }
 
     fun updateSubscription(subscription: Subscription) {
         if (subscription.isLocalGroup()) {
-            _uiMessage.tryEmit("本地分组无需刷新")
+            _uiMessage.tryEmit(appContext.getString(R.string.local_group_no_refresh))
             return
         }
         viewModelScope.launch {
@@ -161,7 +169,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     _uiMessage.tryEmit(formatUpdateResultMessage(subscription.name, updateResult))
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("更新订阅失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.update_subscription_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -172,7 +180,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             val subs = subscriptions.value
             val refreshable = subs.filterNot { it.isLocalGroup() }
             if (refreshable.isEmpty()) {
-                _uiMessage.tryEmit("暂无可刷新的订阅")
+                _uiMessage.tryEmit(appContext.getString(R.string.no_refreshable_subscription))
                 return@launch
             }
 
@@ -189,27 +197,38 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             if (failCount == 0) {
                 _uiMessage.tryEmit(
                     buildString {
-                        append("订阅更新完成：").append(successCount).append(" 个")
-                        append("（新增 ").append(addedCount)
-                        append(" / 更新 ").append(updatedCount)
-                        append(" / 删除 ").append(deletedCount).append("）")
+                        append(
+                            appContext.getString(
+                                R.string.subscription_update_complete_all_format,
+                                successCount,
+                                addedCount,
+                                updatedCount,
+                                deletedCount
+                            )
+                        )
                         if (metadataCount > 0) {
-                            append("，").append(metadataCount).append(" 个同步流量/到期信息")
+                            append(appContext.getString(R.string.subscription_update_metadata_suffix, metadataCount))
                         }
                     }
                 )
             } else {
-                val suffix = lastError?.let { "，${toFriendlyError(it)}" } ?: ""
+                val suffix = lastError?.let {
+                    appContext.getString(R.string.subscription_update_partial_fail_error_suffix, toFriendlyError(it))
+                } ?: ""
                 _uiMessage.tryEmit(
                     buildString {
-                        append("订阅部分更新失败（成功 ").append(successCount)
-                        append(" / 失败 ").append(failCount)
-                        append("，新增 ").append(addedCount)
-                        append(" / 更新 ").append(updatedCount)
-                        append(" / 删除 ").append(deletedCount)
-                        append("）")
+                        append(
+                            appContext.getString(
+                                R.string.subscription_update_partial_fail_format,
+                                successCount,
+                                failCount,
+                                addedCount,
+                                updatedCount,
+                                deletedCount
+                            )
+                        )
                         if (metadataCount > 0) {
-                            append("，").append(metadataCount).append(" 个同步流量/到期信息")
+                            append(appContext.getString(R.string.subscription_update_metadata_suffix, metadataCount))
                         }
                         append(suffix)
                     }
@@ -231,7 +250,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     ) {
         val trimmedSource = source.trim()
         if (trimmedSource.isBlank()) {
-            _uiMessage.tryEmit("导入内容为空")
+            _uiMessage.tryEmit(appContext.getString(R.string.import_empty_content))
             return
         }
 
@@ -256,7 +275,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     )
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.import_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -270,11 +289,11 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     ) {
         val trimmedSource = source.trim()
         if (trimmedSource.isBlank()) {
-            _uiMessage.tryEmit("节点内容为空")
+            _uiMessage.tryEmit(appContext.getString(R.string.node_empty_content))
             return
         }
         if (repository.isValidRemoteSubscriptionUrl(trimmedSource)) {
-            _uiMessage.tryEmit("订阅链接请使用\u201C订阅链接\u201D入口导入")
+            _uiMessage.tryEmit(appContext.getString(R.string.node_content_use_subscription_entry))
             return
         }
         viewModelScope.launch {
@@ -287,7 +306,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     _uiMessage.tryEmit(formatImportResultMessage(importResult))
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.import_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -307,13 +326,13 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     if (index >= 0 && cursor.moveToFirst()) cursor.getLong(index) else null
                 }
                 if (sizeBytes != null && sizeBytes > 8L * 1024L * 1024L) {
-                    throw IllegalStateException("本地文件过大，暂不支持超过 8 MB 的配置")
+                    throw IllegalStateException(appContext.getString(R.string.local_file_too_large))
                 }
                 val content = resolver.openInputStream(uri)?.use { input -> input.readBytes() }
                     ?.toString(Charsets.UTF_8)
                     ?.removePrefix("\uFEFF")
                     ?.trim()
-                    ?: throw IllegalStateException("无法读取本地文件")
+                    ?: throw IllegalStateException(appContext.getString(R.string.cannot_read_local_file))
                 val baseName = displayName.orEmpty().substringBeforeLast('.')
                 val prepared = repository.prepareLocalImport(content, baseName)
                 prepared to baseName
@@ -327,7 +346,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     )
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("导入本地文件失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.import_local_file_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -343,7 +362,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
                     _uiMessage.tryEmit(formatImportResultMessage(importResult))
                 }
                 .onFailure { error ->
-                    _uiMessage.tryEmit("导入失败：${toFriendlyError(error)}")
+                    _uiMessage.tryEmit(appContext.getString(R.string.import_failed, toFriendlyError(error)))
                 }
             _isLoading.value = false
         }
@@ -388,31 +407,32 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
         val error = result.error
         if (error == null && result.nodeCount > 0) {
             val successPrefix = if (result.subscriptionId == 0L) {
-                "导入成功：已添加 ${result.nodeCount} 个节点到未分组"
+                appContext.getString(R.string.import_success_ungrouped_format, result.nodeCount)
             } else {
-                "导入成功：${result.nodeCount} 个节点"
+                appContext.getString(R.string.import_success_with_count_format, result.nodeCount)
             }
             return buildString {
                 append(successPrefix)
                 if (result.metadataFromHeader) {
-                    append("，已读取订阅流量/到期信息")
+                    append(appContext.getString(R.string.import_success_metadata_suffix))
                 }
             }
         }
 
-        return when {
+        val detail = when {
             error?.message == SubscriptionRepository.NO_VALID_NODES_ERROR ->
-                "导入失败：${friendlyNoValidNodesMessage(result.diagnostics)}"
+                friendlyNoValidNodesMessage(result.diagnostics)
 
             error?.message == SubscriptionRepository.LOCAL_GROUP_TARGET_INVALID_ERROR ->
-                "导入失败：订阅分组不可作为导入目标"
+                appContext.getString(R.string.import_fail_local_group_target)
 
             error != null ->
-                "导入失败：${toFriendlyError(error)}"
+                toFriendlyError(error)
 
             else ->
-                "导入失败：${friendlyNoValidNodesMessage(result.diagnostics)}"
+                friendlyNoValidNodesMessage(result.diagnostics)
         }
+        return appContext.getString(R.string.import_failed, detail)
     }
 
     private fun toFriendlyError(error: Throwable): String {
@@ -421,25 +441,27 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             is IllegalStateException ->
                 when (error.message) {
                     SubscriptionRepository.NO_VALID_NODES_ERROR ->
-                        "未解析到可用节点，请检查订阅格式"
+                        appContext.getString(R.string.error_no_valid_nodes)
                     SubscriptionRepository.LOCAL_GROUP_TARGET_INVALID_ERROR ->
-                        "订阅分组不可作为导入目标"
-                    else -> error.message?.takeIf { it.isNotBlank() } ?: "配置异常"
+                        appContext.getString(R.string.import_fail_local_group_target)
+                    else -> error.message?.takeIf { it.isNotBlank() }
+                        ?: appContext.getString(R.string.error_config_exception)
                 }
-            is UnknownHostException -> "无法连接订阅服务器，请检查网络或链接"
-            is SocketTimeoutException -> "连接超时，请稍后重试"
-            is SSLException -> "TLS/证书校验失败，请检查订阅链接"
+            is UnknownHostException -> appContext.getString(R.string.error_unknown_host)
+            is SocketTimeoutException -> appContext.getString(R.string.error_socket_timeout)
+            is SSLException -> appContext.getString(R.string.error_ssl)
             is IOException -> {
                 val text = error.message.orEmpty()
                 if (text.startsWith("HTTP ")) {
-                    "订阅服务器返回 $text"
+                    appContext.getString(R.string.error_http_server_returned_format, text)
                 } else if (text.isNotBlank()) {
                     text
                 } else {
-                    "网络异常，请稍后重试"
+                    appContext.getString(R.string.error_network_general)
                 }
             }
-            else -> error.message?.takeIf { it.isNotBlank() } ?: "未知错误"
+            else -> error.message?.takeIf { it.isNotBlank() }
+                ?: appContext.getString(R.string.error_unknown)
         }
     }
 
@@ -451,33 +473,33 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             .take(2)
 
         return if (hints.isEmpty()) {
-            "未解析到可用节点，请检查订阅格式"
+            appContext.getString(R.string.error_no_valid_nodes)
         } else {
-            "未解析到可用节点。可能原因：${hints.joinToString("；")}"
+            appContext.getString(R.string.error_no_valid_nodes_hints_format, hints.joinToString("；"))
         }
     }
 
     private fun diagnosticsHint(reason: String): String? {
-        return when (reason) {
+        val resId = when (reason) {
             "unsupported_subscription_content",
             "invalid_json_content",
-            "invalid_clash_yaml" -> "订阅内容不是受支持的 sing-box、Clash 或节点链接格式"
+            "invalid_clash_yaml" -> R.string.diag_unsupported_subscription_content
 
-            "missing_clash_proxies" -> "Clash 配置里没有 proxies 节点列表"
+            "missing_clash_proxies" -> R.string.diag_missing_clash_proxies
 
             "unsupported_json_type",
             "unsupported_clash_type",
-            "unsupported_uri_scheme" -> "订阅里包含当前暂不支持的节点类型或链接协议"
+            "unsupported_uri_scheme" -> R.string.diag_unsupported_type_or_scheme
 
             "unsupported_json_transport",
             "unsupported_clash_transport",
-            "unsupported_json_network" -> "订阅里包含当前暂不支持的传输配置"
+            "unsupported_json_network" -> R.string.diag_unsupported_transport
 
             "missing_json_endpoint",
-            "missing_clash_endpoint" -> "部分节点缺少服务器地址或端口"
+            "missing_clash_endpoint" -> R.string.diag_missing_endpoint
 
             "invalid_json_item",
-            "invalid_clash_proxy_item" -> "订阅里的部分节点条目格式不正确"
+            "invalid_clash_proxy_item" -> R.string.diag_invalid_item
 
             "invalid_or_unsupported_shadowsocks_uri",
             "invalid_or_unsupported_vmess_uri",
@@ -486,13 +508,14 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             "invalid_or_unsupported_hysteria2_uri",
             "invalid_or_unsupported_tuic_uri",
             "invalid_or_unsupported_socks_uri",
-            "invalid_or_unsupported_http_uri" -> "节点链接格式不正确，或包含当前暂不支持的参数"
+            "invalid_or_unsupported_http_uri" -> R.string.diag_invalid_uri
 
             "informational_entry",
-            "duplicate_entry" -> null
+            "duplicate_entry" -> return null
 
-            else -> null
+            else -> return null
         }
+        return appContext.getString(resId)
     }
 
     private fun formatUpdateResultMessage(
@@ -501,25 +524,26 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
     ): String {
         val summaryText = formatSummary(result.summary)
         return buildString {
-            append("订阅更新完成：").append(subscriptionName)
+            append(appContext.getString(R.string.subscription_update_complete_format, subscriptionName))
             if (summaryText.isNotBlank()) {
-                append("（").append(summaryText).append("）")
+                append(appContext.getString(R.string.subscription_update_summary_paren_format, summaryText))
             }
             if (result.metadataFromHeader) {
-                append("，已同步流量/到期信息")
+                append(appContext.getString(R.string.subscription_update_metadata_single_suffix))
             }
         }
     }
 
     private fun formatSummary(summary: SubscriptionUpdateSummary): String {
         return if (summary.changedCount == 0) {
-            "无节点变更"
+            appContext.getString(R.string.summary_no_change)
         } else {
-            buildString {
-                append("新增 ").append(summary.addedCount)
-                append(" / 更新 ").append(summary.updatedCount)
-                append(" / 删除 ").append(summary.deletedCount)
-            }
+            appContext.getString(
+                R.string.summary_changes_format,
+                summary.addedCount,
+                summary.updatedCount,
+                summary.deletedCount
+            )
         }
     }
 }

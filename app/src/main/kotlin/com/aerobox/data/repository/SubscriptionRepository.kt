@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
 import com.aerobox.AeroBoxApplication
+import com.aerobox.R
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.subscription.ParseDiagnostics
 import com.aerobox.core.subscription.SubscriptionParser
@@ -179,7 +180,7 @@ class SubscriptionRepository(context: Context) {
             val prepared = prepareSubscriptionImport(url)
             val effectiveUrl = prepared.resolvedUrl ?: url
             val effectiveName = name.ifBlank { prepared.resolvedName ?: deriveSubscriptionName(effectiveUrl) }
-                ?: "导入订阅"
+                ?: appContext.getString(R.string.import_subscription_default_name)
             val effectiveInterval = if (autoUpdate) {
                 prepared.resolvedUpdateInterval ?: normalizedInterval
             } else {
@@ -273,7 +274,7 @@ class SubscriptionRepository(context: Context) {
 
     suspend fun updateSubscription(subscription: Subscription): SubscriptionUpdateResult {
         if (subscription.isLocalGroup()) {
-            throw IllegalStateException("本地分组无法从远端刷新")
+            throw IllegalStateException(appContext.getString(R.string.error_local_group_no_remote_refresh))
         }
         val result = updateSubscriptionInternal(subscription)
         SubscriptionUpdateScheduler.reconfigure(appContext)
@@ -308,7 +309,7 @@ class SubscriptionRepository(context: Context) {
     }
 
     suspend fun createLocalGroup(name: String): Long {
-        val trimmed = name.trim().ifBlank { "本地分组" }
+        val trimmed = name.trim().ifBlank { appContext.getString(R.string.local_group_label) }
         val subscription = Subscription(
             name = trimmed,
             url = "",
@@ -429,7 +430,7 @@ class SubscriptionRepository(context: Context) {
                 is ImportGroupTarget.Ungrouped -> 0L
                 is ImportGroupTarget.Existing -> {
                     val existing = subscriptionDao.getById(target.subscriptionId)
-                        ?: throw IllegalStateException("目标分组不存在")
+                        ?: throw IllegalStateException(appContext.getString(R.string.error_target_group_not_found))
                     if (!existing.isLocalGroup()) {
                         throw IllegalStateException(LOCAL_GROUP_TARGET_INVALID_ERROR)
                     }
@@ -478,7 +479,7 @@ class SubscriptionRepository(context: Context) {
         subscriptionId: Long
     ): SubscriptionImportResult {
         val subscription = subscriptionDao.getById(subscriptionId)
-            ?: throw IllegalStateException("目标分组不存在")
+            ?: throw IllegalStateException(appContext.getString(R.string.error_target_group_not_found))
         if (!subscription.isLocalGroup()) {
             throw IllegalStateException(LOCAL_GROUP_TARGET_INVALID_ERROR)
         }
@@ -505,7 +506,7 @@ class SubscriptionRepository(context: Context) {
         name: String
     ): SubscriptionImportResult {
         val trimmedName = name.trim().ifBlank { prepared.resolvedName?.trim().orEmpty() }
-            .ifBlank { "本地分组" }
+            .ifBlank { appContext.getString(R.string.local_group_label) }
         val subscriptionId = createLocalGroup(trimmedName)
         val nodes = prepareNodesForLocalGroup(
             prepared = prepared,

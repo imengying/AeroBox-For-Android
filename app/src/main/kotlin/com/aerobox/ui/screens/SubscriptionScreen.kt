@@ -146,7 +146,7 @@ fun SubscriptionScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            qrScanLauncher.launch(buildQrScanOptions())
+            qrScanLauncher.launch(buildQrScanOptions(context))
         } else {
             coroutineScope.launch {
                 snackbarHostState.showSnackbar(
@@ -237,7 +237,7 @@ fun SubscriptionScreen(
                         Manifest.permission.CAMERA
                     ) == PackageManager.PERMISSION_GRANTED
                     if (hasCameraPermission) {
-                        qrScanLauncher.launch(buildQrScanOptions())
+                        qrScanLauncher.launch(buildQrScanOptions(context))
                     } else {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
@@ -547,10 +547,10 @@ fun SubscriptionScreen(
     }
 }
 
-private fun buildQrScanOptions(): ScanOptions {
+private fun buildQrScanOptions(context: android.content.Context): ScanOptions {
     return ScanOptions().apply {
         setCaptureActivity(AeroBoxQrCaptureActivity::class.java)
-        setPrompt("扫描订阅或节点二维码")
+        setPrompt(context.getString(R.string.qr_scan_prompt))
         setDesiredBarcodeFormats(ScanOptions.QR_CODE)
         setBeepEnabled(false)
         setOrientationLocked(false)
@@ -623,6 +623,7 @@ private fun SubscriptionItem(
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit
 ) {
+    val context = LocalContext.current
     val isLocalGroup = subscription.isLocalGroup()
     val containerColor by animateColorAsState(
         targetValue = if (isDragging) {
@@ -685,7 +686,7 @@ private fun SubscriptionItem(
                     Spacer(Modifier.width(8.dp))
                     if (!isLocalGroup) {
                         Text(
-                            text = buildRelativeTimeText(subscription.updateTime),
+                            text = buildRelativeTimeText(context, subscription.updateTime),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -831,17 +832,17 @@ private fun formatSubscriptionDate(timestampMs: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestampMs))
 }
 
-private fun buildRelativeTimeText(timestampMs: Long): String {
-    if (timestampMs <= 0L) return "从未更新"
+private fun buildRelativeTimeText(context: android.content.Context, timestampMs: Long): String {
+    if (timestampMs <= 0L) return context.getString(R.string.never_updated)
     val diff = System.currentTimeMillis() - timestampMs
     val seconds = diff / 1000
-    if (seconds < 60) return "刚刚更新"
+    if (seconds < 60) return context.getString(R.string.just_updated)
     val minutes = seconds / 60
-    if (minutes < 60) return "${minutes}分钟前"
+    if (minutes < 60) return context.getString(R.string.minutes_ago_format, minutes.toInt())
     val hours = minutes / 60
-    if (hours < 24) return "${hours}小时前"
+    if (hours < 24) return context.getString(R.string.hours_ago_format, hours.toInt())
     val days = hours / 24
-    return "${days}天前"
+    return context.getString(R.string.days_ago_format, days.toInt())
 }
 
 @Composable

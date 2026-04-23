@@ -3,6 +3,7 @@ package com.aerobox.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aerobox.R
 import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.InstalledAppInfo
@@ -116,7 +117,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             directDns = currentPrefs.directDns
         ) ?: return
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用 DNS 设置失败"
+            failurePrefix = appContext.getString(R.string.dns_setting_failed)
         )
     }
 
@@ -128,7 +129,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             directDns = normalizedDns
         ) ?: return
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用 DNS 设置失败"
+            failurePrefix = appContext.getString(R.string.dns_setting_failed)
         )
     }
 
@@ -140,7 +141,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             directDns = normalizedDirectDns
         ) ?: return
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用 DNS 设置失败"
+            failurePrefix = appContext.getString(R.string.dns_setting_failed)
         )
     }
 
@@ -150,28 +151,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             directDns = PreferenceManager.DEFAULT_DIRECT_DNS
         ) ?: return
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用 DNS 设置失败"
+            failurePrefix = appContext.getString(R.string.dns_setting_failed)
         )
     }
 
     suspend fun setPerAppProxyEnabled(enabled: Boolean) {
         PreferenceManager.setPerAppProxyEnabled(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用分应用代理设置失败"
+            failurePrefix = appContext.getString(R.string.perapp_setting_failed)
         )
     }
 
     suspend fun setPerAppProxyMode(mode: String) {
         PreferenceManager.setPerAppProxyMode(appContext, mode)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用分应用代理设置失败"
+            failurePrefix = appContext.getString(R.string.perapp_setting_failed)
         )
     }
 
     suspend fun setPerAppProxyPackages(packages: Set<String>) {
         PreferenceManager.setPerAppProxyPackages(appContext, packages)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用分应用代理设置失败"
+            failurePrefix = appContext.getString(R.string.perapp_setting_failed)
         )
     }
 
@@ -192,7 +193,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     suspend fun setIPv6Mode(mode: IPv6Mode) {
         PreferenceManager.setIPv6Mode(appContext, mode)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用 IPv6 设置失败"
+            failurePrefix = appContext.getString(R.string.ipv6_setting_failed)
         )
     }
 
@@ -203,35 +204,35 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     suspend fun setEnableGeoRules(enabled: Boolean) {
         PreferenceManager.setEnableGeoRules(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用规则设置失败"
+            failurePrefix = appContext.getString(R.string.geo_setting_failed)
         )
     }
 
     suspend fun setEnableGeoCnDomainRule(enabled: Boolean) {
         PreferenceManager.setEnableGeoCnDomainRule(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用规则设置失败"
+            failurePrefix = appContext.getString(R.string.geo_setting_failed)
         )
     }
 
     suspend fun setEnableGeoCnIpRule(enabled: Boolean) {
         PreferenceManager.setEnableGeoCnIpRule(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用规则设置失败"
+            failurePrefix = appContext.getString(R.string.geo_setting_failed)
         )
     }
 
     suspend fun setEnableGeoAdsBlock(enabled: Boolean) {
         PreferenceManager.setEnableGeoAdsBlock(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用规则设置失败"
+            failurePrefix = appContext.getString(R.string.geo_setting_failed)
         )
     }
 
     suspend fun setEnableGeoBlockQuic(enabled: Boolean) {
         PreferenceManager.setEnableGeoBlockQuic(appContext, enabled)
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用规则设置失败"
+            failurePrefix = appContext.getString(R.string.geo_setting_failed)
         )
     }
 
@@ -259,7 +260,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun refreshActiveConnectionForInboundChange() {
         refreshActiveConnectionForRuntimeChange(
-            failurePrefix = "应用入站设置失败"
+            failurePrefix = appContext.getString(R.string.inbound_setting_failed)
         )
     }
 
@@ -279,7 +280,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             ipv6Mode = currentPrefs.ipv6Mode
         )
         if (syntaxError != null) {
-            _uiMessage.tryEmit("DNS 设置无效：$syntaxError")
+            _uiMessage.tryEmit(appContext.getString(R.string.dns_invalid_format, syntaxError))
             return null
         }
 
@@ -292,13 +293,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     preferencesOverride = candidatePrefs
                 )
             }.getOrElse { error ->
-                val message = error.message?.takeIf { it.isNotBlank() } ?: "配置生成失败"
-                _uiMessage.tryEmit("DNS 设置无效：$message")
+                val message = error.message?.takeIf { it.isNotBlank() }
+                    ?: appContext.getString(R.string.config_generation_failed)
+                _uiMessage.tryEmit(appContext.getString(R.string.dns_invalid_format, message))
                 return null
             }
             val configError = configResolver.validateConfig(candidateConfig)
             if (configError != null) {
-                _uiMessage.tryEmit("DNS 设置无效：$configError")
+                _uiMessage.tryEmit(appContext.getString(R.string.dns_invalid_format, configError))
                 return null
             }
         }
@@ -317,22 +319,32 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         when (val result = vpnRepository.reloadActiveConnection(currentNode)) {
             is VpnConnectionResult.Success -> {
-                _uiMessage.tryEmit("正在应用")
+                _uiMessage.tryEmit(appContext.getString(R.string.applying))
             }
 
             is VpnConnectionResult.InvalidConfig -> {
-                _uiMessage.tryEmit("$failurePrefix：${result.error}")
+                _uiMessage.tryEmit(
+                    appContext.getString(R.string.setting_failed_with_error_format, failurePrefix, result.error)
+                )
             }
 
             is VpnConnectionResult.Failure -> {
                 val details = result.throwable.message?.takeIf { it.isNotBlank() }
                 _uiMessage.tryEmit(
-                    details?.let { "$failurePrefix：$it" } ?: failurePrefix
+                    details?.let {
+                        appContext.getString(R.string.setting_failed_with_error_format, failurePrefix, it)
+                    } ?: failurePrefix
                 )
             }
 
             VpnConnectionResult.NoNodeAvailable -> {
-                _uiMessage.tryEmit("$failurePrefix：当前节点不可用")
+                _uiMessage.tryEmit(
+                    appContext.getString(
+                        R.string.setting_failed_with_error_format,
+                        failurePrefix,
+                        appContext.getString(R.string.current_node_unavailable)
+                    )
+                )
             }
         }
     }
