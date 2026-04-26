@@ -893,7 +893,10 @@ object ConfigGenerator {
                         ports.forEach { portArray.put(it) }
                         outbound.put("server_ports", portArray)
                     }
-                node.hopInterval?.takeIf { it.isNotBlank() }?.let { outbound.put("hop_interval", it) }
+                node.hopInterval
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::normalizeHysteriaHopInterval)
+                    ?.let { outbound.put("hop_interval", it) }
                 node.upMbps?.takeIf { it > 0 }?.let { outbound.put("up_mbps", it) }
                 node.downMbps?.takeIf { it > 0 }?.let { outbound.put("down_mbps", it) }
             }
@@ -1124,6 +1127,11 @@ object ConfigGenerator {
         }
 
         return trimmed.replace(" ", "")
+    }
+
+    private fun normalizeHysteriaHopInterval(value: String): String {
+        val trimmed = value.trim()
+        return if (Regex("""^\d+$""").matches(trimmed)) "${trimmed}s" else trimmed
     }
 
     private fun mergeHeaderJson(host: String?): JSONObject? {

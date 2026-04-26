@@ -74,8 +74,6 @@ object ClashParser {
             ?: return ProxyParseResult.Ignored("missing_clash_type")
         val server = stringValue(map, "server")
             ?: return ProxyParseResult.Ignored("missing_clash_endpoint")
-        val port = intValue(map, "port")
-            ?: return ProxyParseResult.Ignored("missing_clash_endpoint")
 
         val type = when (typeStr) {
             "ss", "shadowsocks" -> {
@@ -94,6 +92,15 @@ object ClashParser {
             "http", "https" -> ProxyType.HTTP
             else -> return ProxyParseResult.Ignored("unsupported_clash_type")
         }
+        val hysteriaServerPorts = firstNonBlank(
+            joinedValue(map, "server-ports"),
+            joinedValue(map, "server_ports"),
+            joinedValue(map, "ports"),
+            joinedValue(map, "mport")
+        )
+        val port = intValue(map, "port")
+            ?: if (type == ProxyType.HYSTERIA2) firstPortFromPortList(hysteriaServerPorts) else null
+            ?: return ProxyParseResult.Ignored("missing_clash_endpoint")
         val hasRealityKey = !stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
             !stringValue(map, "reality-opts", "public_key").isNullOrBlank() ||
             !stringValue(map, "public-key").isNullOrBlank() ||
@@ -254,12 +261,7 @@ object ClashParser {
                 stringValue(map, "obfs-password"),
                 stringValue(map, "obfs_password")
             ),
-            serverPorts = firstNonBlank(
-                joinedValue(map, "server-ports"),
-                joinedValue(map, "server_ports"),
-                joinedValue(map, "ports"),
-                stringValue(map, "mport")
-            ),
+            serverPorts = hysteriaServerPorts,
             hopInterval = firstNonBlank(
                 stringValue(map, "hop-interval"),
                 stringValue(map, "hop_interval")
@@ -321,6 +323,18 @@ object ClashParser {
             is Number -> resolved.toInt()
             else -> resolved.toString().trim().toIntOrNull()
         }
+    }
+
+    private fun firstPortFromPortList(serverPorts: String?): Int? {
+        return serverPorts
+            ?.split(",")
+            ?.firstNotNullOfOrNull { entry ->
+                Regex("""\d{1,5}""")
+                    .find(entry)
+                    ?.value
+                    ?.toIntOrNull()
+                    ?.takeIf { it in 1..65535 }
+            }
     }
 
     private fun booleanValue(source: Any?, vararg path: String): Boolean? {
