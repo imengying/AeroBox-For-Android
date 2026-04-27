@@ -13,6 +13,7 @@ enum class ProxyType {
     TROJAN,
     HYSTERIA2,
     TUIC,
+    NAIVE,
     SOCKS,
     HTTP;
 
@@ -92,7 +93,13 @@ data class ProxyNode(
     // TUIC-specific
     val congestionControl: String? = null,
     val udpRelayMode: String? = null,
-    val udpOverStream: Boolean? = null
+    val udpOverStream: Boolean? = null,
+    // Naive-specific
+    val naiveProtocol: String? = null,
+    val naiveExtraHeaders: String? = null,
+    val naiveInsecureConcurrency: Int? = null,
+    val naiveCertificate: String? = null,
+    val naiveCertificatePath: String? = null
 )
 
 private val supportedEnabledNetworks = setOf("tcp", "udp")

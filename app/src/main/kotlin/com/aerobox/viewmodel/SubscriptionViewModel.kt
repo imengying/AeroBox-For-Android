@@ -510,6 +510,7 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             "invalid_or_unsupported_trojan_uri",
             "invalid_or_unsupported_hysteria2_uri",
             "invalid_or_unsupported_tuic_uri",
+            "invalid_or_unsupported_naive_uri",
             "invalid_or_unsupported_socks_uri",
             "invalid_or_unsupported_http_uri" -> R.string.diag_invalid_uri
 

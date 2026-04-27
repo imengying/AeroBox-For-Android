@@ -500,6 +500,9 @@ object SubscriptionParser {
                 uri.startsWith("hysteria2://", ignoreCase = true) || uri.startsWith("hy2://", ignoreCase = true) ->
                     "invalid_or_unsupported_hysteria2_uri"
                 uri.startsWith("tuic://", ignoreCase = true) -> "invalid_or_unsupported_tuic_uri"
+                uri.startsWith("naive+https://", ignoreCase = true) ||
+                    uri.startsWith("naive+quic://", ignoreCase = true) ||
+                    uri.startsWith("naive://", ignoreCase = true) -> "invalid_or_unsupported_naive_uri"
                 uri.startsWith("socks://", ignoreCase = true) ||
                     uri.startsWith("socks5://", ignoreCase = true) -> "invalid_or_unsupported_socks_uri"
                 uri.startsWith("http://", ignoreCase = true) || uri.startsWith("https://", ignoreCase = true) ->
@@ -513,6 +516,9 @@ object SubscriptionParser {
                 uri.startsWith("trojan://", ignoreCase = true) -> parseTrojanUri(uri)
                 uri.startsWith("hysteria2://", ignoreCase = true) || uri.startsWith("hy2://", ignoreCase = true) -> parseHysteria2Uri(uri)
                 uri.startsWith("tuic://", ignoreCase = true) -> parseTuicUri(uri)
+                uri.startsWith("naive+https://", ignoreCase = true) ||
+                    uri.startsWith("naive+quic://", ignoreCase = true) ||
+                    uri.startsWith("naive://", ignoreCase = true) -> parseNaiveUri(uri)
                 uri.startsWith("socks://", ignoreCase = true) ||
                     uri.startsWith("socks5://", ignoreCase = true) -> parseSocksUri(uri)
                 uri.startsWith("http://", ignoreCase = true) -> parseHttpProxyUri(uri)
@@ -792,6 +798,52 @@ object SubscriptionParser {
         ).withUriSharedOptions(params)
     }
 
+    private fun parseNaiveUri(uri: String): ProxyNode? {
+        val parsed = Uri.parse(uri)
+        val server = parsed.host ?: return null
+        val port = parsed.port.takeIf { it > 0 } ?: 443
+        val params = parseUriParams(parsed.query)
+        val protocol = resolveNaiveProtocol(
+            parsed.scheme,
+            params["protocol"],
+            params["proto"],
+            parseBooleanOrNull(params["quic"])
+        ) ?: return null
+        val userInfo = extractUserInfo(parsed)
+        val username = userInfo?.substringBefore(':', userInfo)?.ifBlank { null }
+        val password = userInfo?.substringAfter(':', "")?.ifBlank { null }
+
+        return ProxyNode(
+            name = decodeName(parsed.fragment ?: "Naive"),
+            type = ProxyType.NAIVE,
+            server = server,
+            port = port,
+            username = username,
+            password = password,
+            tls = true,
+            sni = params["sni"],
+            transportType = if (protocol == "quic") "quic" else null,
+            congestionControl = firstNonBlank(
+                params["quic-congestion-control"],
+                params["quic_congestion_control"]
+            ),
+            naiveProtocol = protocol,
+            naiveExtraHeaders = firstNonBlank(
+                params["extra-headers"],
+                params["extra_headers"]
+            ),
+            naiveInsecureConcurrency = parseIntField(
+                params["insecure-concurrency"],
+                params["insecure_concurrency"]
+            ),
+            naiveCertificate = firstNonBlank(params["cert"], params["certificate"]),
+            naiveCertificatePath = firstNonBlank(
+                params["certificate-path"],
+                params["certificate_path"]
+            )
+        ).withUriSharedOptions(params)
+    }
+
     private fun parseJsonContent(content: String): NodeParseBatch {
         return runCatching {
             if (content.trimStart().startsWith("[")) {
@@ -839,6 +891,7 @@ object SubscriptionParser {
                 typeRaw.contains("trojan") -> ProxyType.TROJAN
                 typeRaw.contains("hysteria2") || typeRaw == "hy2" -> ProxyType.HYSTERIA2
                 typeRaw.contains("tuic") -> ProxyType.TUIC
+                typeRaw.contains("naive") -> ProxyType.NAIVE
                 typeRaw == "socks" || typeRaw == "socks5" -> ProxyType.SOCKS
                 typeRaw == "http" || typeRaw == "https" -> ProxyType.HTTP
                 else -> {
@@ -859,6 +912,7 @@ object SubscriptionParser {
             )
             val resolvedPort = obj.optInt("server_port", obj.optInt("port", -1)).takeIf { it > 0 }
                 ?: (if (type == ProxyType.HYSTERIA2) firstPortFromPortList(serverPorts) else null)
+                ?: (if (type == ProxyType.NAIVE) 443 else null)
             if (server.isBlank() || resolvedPort == null) {
                 diagnostics = diagnostics.withIgnored("missing_json_endpoint")
                 continue
@@ -868,7 +922,7 @@ object SubscriptionParser {
                 obj.optString("network", "").ifBlank { null },
                 obj.optString("net", "").ifBlank { null }
             )
-            val transportType = resolveTransportType(
+            val resolvedTransportType = resolveTransportType(
                 rawNetwork = firstNonBlank(
                     transport?.optString("type", "")?.ifBlank { null },
                     configuredNetwork
@@ -878,6 +932,21 @@ object SubscriptionParser {
                     obj.optString("header_type", "").ifBlank { null }
                 )
             )
+            val naiveProtocol = if (type == ProxyType.NAIVE) {
+                resolveNaiveProtocol(
+                    typeRaw,
+                    obj.optString("protocol", "").ifBlank { null },
+                    obj.optString("proto", "").ifBlank { null },
+                    obj.optBoolean("quic", false)
+                )
+            } else {
+                null
+            }
+            val transportType = if (type == ProxyType.NAIVE && naiveProtocol == "quic") {
+                "quic"
+            } else {
+                resolvedTransportType
+            }
             val enabledNetwork = normalizeEnabledNetwork(configuredNetwork)
             if (!configuredNetwork.isNullOrBlank() && transport == null && transportType == null && enabledNetwork == null) {
                 diagnostics = diagnostics.withIgnored("unsupported_json_network")
@@ -912,7 +981,8 @@ object SubscriptionParser {
                 security = obj.optString("security", "").ifBlank { null },
                 network = enabledNetwork,
                 transportType = transportType,
-                tls = typeRaw == "https"
+                tls = type == ProxyType.NAIVE
+                        || typeRaw == "https"
                         || obj.optBoolean("tls", false)
                         || tlsObject?.optBoolean("enabled", false) == true
                         || realityObject?.optBoolean("enabled", false) == true,
@@ -1007,7 +1077,37 @@ object SubscriptionParser {
                 upMbps = obj.optInt("up_mbps", -1).takeIf { it > 0 },
                 downMbps = obj.optInt("down_mbps", -1).takeIf { it > 0 },
                 muxEnabled = optBooleanField(multiplex, "enabled"),
-                udpOverStream = optBooleanField(obj, "udp_over_stream")
+                congestionControl = firstNonBlank(
+                    obj.optString("congestion_control", "").ifBlank { null },
+                    obj.optString("congestion-control", "").ifBlank { null },
+                    obj.optString("quic_congestion_control", "").ifBlank { null },
+                    obj.optString("quic-congestion-control", "").ifBlank { null }
+                ),
+                udpRelayMode = firstNonBlank(
+                    obj.optString("udp_relay_mode", "").ifBlank { null },
+                    obj.optString("udp-relay-mode", "").ifBlank { null }
+                ),
+                udpOverStream = optBooleanField(obj, "udp_over_stream", "udp-over-stream"),
+                naiveProtocol = naiveProtocol,
+                naiveExtraHeaders = firstNonBlank(
+                    jsonObjectString(obj.optJSONObject("extra_headers")),
+                    jsonObjectString(obj.optJSONObject("extra-headers")),
+                    jsonScalarString(obj.opt("extra_headers")),
+                    jsonScalarString(obj.opt("extra-headers"))
+                ),
+                naiveInsecureConcurrency = obj.optInt("insecure_concurrency", -1).takeIf { it > 0 }
+                    ?: obj.optInt("insecure-concurrency", -1).takeIf { it > 0 },
+                naiveCertificate = firstNonBlank(
+                    jsonScalarString(tlsObject?.opt("certificate")),
+                    jsonScalarString(obj.opt("certificate")),
+                    jsonScalarString(obj.opt("cert"))
+                ),
+                naiveCertificatePath = firstNonBlank(
+                    jsonScalarString(tlsObject?.opt("certificate_path")),
+                    jsonScalarString(tlsObject?.opt("certificate-path")),
+                    jsonScalarString(obj.opt("certificate_path")),
+                    jsonScalarString(obj.opt("certificate-path"))
+                )
             )
         }
         return NodeParseBatch(nodes = result, diagnostics = diagnostics)
@@ -1120,6 +1220,23 @@ object SubscriptionParser {
         return parseIntField(*keys.map { params[it] }.toTypedArray())
     }
 
+    private fun resolveNaiveProtocol(
+        schemeOrType: String?,
+        protocol: String?,
+        proto: String?,
+        quic: Boolean?
+    ): String? {
+        val normalizedSource = schemeOrType?.trim()?.lowercase(Locale.ROOT)
+        val configuredProtocol = firstNonBlank(protocol, proto)?.lowercase(Locale.ROOT)
+        return when {
+            normalizedSource == "naive+quic" || quic == true || configuredProtocol == "quic" -> "quic"
+            normalizedSource == "naive+https" || normalizedSource == "naive" -> "https"
+            normalizedSource?.contains("naive") == true -> "https"
+            configuredProtocol == "https" -> "https"
+            else -> null
+        }
+    }
+
     private fun normalizeTransportType(value: String?): String? {
         val normalized = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
         return when (normalized) {
@@ -1206,6 +1323,10 @@ object SubscriptionParser {
             is JSONObject, is JSONArray -> null
             else -> value.toString().trim().takeIf { it.isNotEmpty() }
         }
+    }
+
+    private fun jsonObjectString(value: JSONObject?): String? {
+        return value?.takeIf { it.length() > 0 }?.toString()
     }
 
     private fun pluginOptionsValue(value: JSONObject?): String? {

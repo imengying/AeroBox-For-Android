@@ -2,6 +2,7 @@ package com.aerobox.core.subscription
 
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.ProxyType
+import org.json.JSONObject
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
@@ -88,6 +89,7 @@ object ClashParser {
             "trojan" -> ProxyType.TROJAN
             "hysteria2", "hy2" -> ProxyType.HYSTERIA2
             "tuic" -> ProxyType.TUIC
+            "naive", "naive+https", "naive+quic" -> ProxyType.NAIVE
             "socks", "socks5" -> ProxyType.SOCKS
             "http", "https" -> ProxyType.HTTP
             else -> return ProxyParseResult.Ignored("unsupported_clash_type")
@@ -100,7 +102,18 @@ object ClashParser {
         )
         val port: Int = intValue(map, "port")
             ?: (if (type == ProxyType.HYSTERIA2) firstPortFromPortList(hysteriaServerPorts) else null)
+            ?: (if (type == ProxyType.NAIVE) 443 else null)
             ?: return ProxyParseResult.Ignored("missing_clash_endpoint")
+        val naiveProtocol = if (type == ProxyType.NAIVE) {
+            resolveNaiveProtocol(
+                typeStr,
+                stringValue(map, "protocol"),
+                stringValue(map, "proto"),
+                booleanValue(map, "quic")
+            )
+        } else {
+            null
+        }
         val hasRealityKey = !stringValue(map, "reality-opts", "public-key").isNullOrBlank() ||
             !stringValue(map, "reality-opts", "public_key").isNullOrBlank() ||
             !stringValue(map, "public-key").isNullOrBlank() ||
@@ -111,6 +124,7 @@ object ClashParser {
         )
 
         val tls = when {
+            type == ProxyType.NAIVE -> true
             type == ProxyType.TROJAN || type == ProxyType.HYSTERIA2 || type == ProxyType.TUIC -> true
             typeStr == "https" -> true
             booleanValue(map, "tls") == true -> true
@@ -129,7 +143,11 @@ object ClashParser {
             hasValue(map, "http-upgrade-path") || hasValue(map, "http-upgrade-host") -> "httpupgrade"
             else -> null
         }
-        val transportType = resolveTransportType(network)
+        val transportType = if (type == ProxyType.NAIVE && naiveProtocol == "quic") {
+            "quic"
+        } else {
+            resolveTransportType(network)
+        }
         if (network != null && network.lowercase() != "tcp" && transportType == null) {
             return ProxyParseResult.Ignored("unsupported_clash_transport")
         }
@@ -272,13 +290,34 @@ object ClashParser {
             congestionControl = firstNonBlank(
                 stringValue(map, "congestion-controller"),
                 stringValue(map, "congestion_control"),
-                stringValue(map, "congestion-control")
+                stringValue(map, "congestion-control"),
+                stringValue(map, "quic-congestion-control"),
+                stringValue(map, "quic_congestion_control")
             ),
             udpRelayMode = firstNonBlank(
                 stringValue(map, "udp-relay-mode"),
                 stringValue(map, "udp_relay_mode")
             ),
-            udpOverStream = booleanValue(map, "udp-over-stream") ?: booleanValue(map, "udp_over_stream")
+            udpOverStream = booleanValue(map, "udp-over-stream") ?: booleanValue(map, "udp_over_stream"),
+            naiveProtocol = naiveProtocol,
+            naiveExtraHeaders = naiveExtraHeadersValue(
+                firstNonNullValue(
+                    value(map, "extra-headers"),
+                    value(map, "extra_headers")
+                )
+            ),
+            naiveInsecureConcurrency = intValue(map, "insecure-concurrency")
+                ?: intValue(map, "insecure_concurrency"),
+            naiveCertificate = firstNonBlank(
+                stringValue(map, "cert"),
+                stringValue(map, "certificate"),
+                stringValue(map, "tls", "certificate")
+            ),
+            naiveCertificatePath = firstNonBlank(
+                stringValue(map, "certificate-path"),
+                stringValue(map, "certificate_path"),
+                stringValue(map, "tls", "certificate_path")
+            )
             )
         )
     }
@@ -377,6 +416,31 @@ object ClashParser {
 
     private fun firstNonBlank(vararg values: String?): String? {
         return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun resolveNaiveProtocol(type: String, protocol: String?, proto: String?, quic: Boolean?): String {
+        return when {
+            type == "naive+quic" || quic == true -> "quic"
+            firstNonBlank(protocol, proto)?.equals("quic", ignoreCase = true) == true -> "quic"
+            else -> "https"
+        }
+    }
+
+    private fun naiveExtraHeadersValue(value: Any?): String? {
+        return when (value) {
+            null -> null
+            is String -> value.trim().takeIf { it.isNotEmpty() }
+            is Map<*, *> -> {
+                val headers = JSONObject()
+                value.forEach { (key, raw) ->
+                    val headerKey = key?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                    val headerValue = raw?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                    headers.put(headerKey, headerValue)
+                }
+                headers.takeIf { it.length() > 0 }?.toString()
+            }
+            else -> value.toString().trim().takeIf { it.isNotEmpty() }
+        }
     }
 
     private fun pluginOptionsValue(value: Any?): String? {

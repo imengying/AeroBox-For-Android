@@ -912,6 +912,26 @@ object ConfigGenerator {
                 enabledNetwork?.let { outbound.put("network", it) }
             }
 
+            ProxyType.NAIVE -> {
+                outbound.put("type", "naive")
+                node.username?.takeIf { it.isNotBlank() }?.let { outbound.put("username", it) }
+                node.password?.takeIf { it.isNotBlank() }?.let { outbound.put("password", it) }
+                outbound.put("tls", buildNaiveTlsObject(node))
+                if (node.naiveProtocol.equals("quic", ignoreCase = true) || node.transportType.equals("quic", ignoreCase = true)) {
+                    outbound.put("quic", true)
+                    node.congestionControl?.takeIf { it.isNotBlank() }?.let {
+                        outbound.put("quic_congestion_control", it)
+                    }
+                }
+                node.naiveInsecureConcurrency?.takeIf { it > 0 }?.let {
+                    outbound.put("insecure_concurrency", it)
+                }
+                buildNaiveExtraHeaders(node.naiveExtraHeaders)?.let { outbound.put("extra_headers", it) }
+                buildUdpOverTcp(node.udpOverTcpEnabled, node.udpOverTcpVersion)?.let {
+                    outbound.put("udp_over_tcp", it)
+                }
+            }
+
             ProxyType.SOCKS -> {
                 outbound.put("type", "socks")
                 node.username?.let { outbound.put("username", it) }
@@ -1005,6 +1025,43 @@ object ConfigGenerator {
         val normalized = server.trim().removePrefix("[").removeSuffix("]").substringBefore('%')
         return normalized.contains(':') &&
             normalized.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
+    }
+
+    private fun buildNaiveTlsObject(node: ProxyNode): JSONObject {
+        val tls = JSONObject()
+        node.sni?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+        node.naiveCertificate?.takeIf { it.isNotBlank() }?.let { tls.put("certificate", it) }
+        node.naiveCertificatePath?.takeIf { it.isNotBlank() }?.let { tls.put("certificate_path", it) }
+        return tls
+    }
+
+    private fun buildNaiveExtraHeaders(raw: String?): JSONObject? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (value.startsWith("{")) {
+            return runCatching { JSONObject(value) }
+                .getOrNull()
+                ?.takeIf { it.length() > 0 }
+        }
+
+        val headers = JSONObject()
+        value
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .split('\n', ';')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .forEach { entry ->
+                val separator = listOf(entry.indexOf(':'), entry.indexOf('='))
+                    .filter { it > 0 }
+                    .minOrNull()
+                    ?: return@forEach
+                val key = entry.substring(0, separator).trim()
+                val headerValue = entry.substring(separator + 1).trim()
+                if (key.isNotEmpty() && headerValue.isNotEmpty()) {
+                    headers.put(key, headerValue)
+                }
+            }
+        return headers.takeIf { it.length() > 0 }
     }
 
 

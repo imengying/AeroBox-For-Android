@@ -70,6 +70,11 @@ fun ProxyNode.connectionFingerprint(includeName: Boolean = true): String {
         add(congestionControl.normalizedIdentityValue())
         add(udpRelayMode.normalizedIdentityValue())
         add(udpOverStream?.toString().normalizedIdentityValue())
+        add(naiveProtocol.normalizedIdentityValue())
+        add(naiveExtraHeaders.normalizedIdentityValue())
+        add(naiveInsecureConcurrency?.toString().normalizedIdentityValue())
+        add(naiveCertificate.normalizedIdentityValue())
+        add(naiveCertificatePath.normalizedIdentityValue())
     }.joinToString("|")
 }
 

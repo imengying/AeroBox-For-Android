@@ -19,6 +19,9 @@ object ExternalImportParser {
         "hysteria2",
         "hy2",
         "tuic",
+        "naive",
+        "naive+https",
+        "naive+quic",
         "socks",
         "socks5"
     )

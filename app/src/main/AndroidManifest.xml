@@ -44,6 +44,9 @@
                 <data android:scheme="hysteria2" />
                 <data android:scheme="hy2" />
                 <data android:scheme="tuic" />
+                <data android:scheme="naive" />
+                <data android:scheme="naive+https" />
+                <data android:scheme="naive+quic" />
                 <data android:scheme="socks" />
             </intent-filter>
         </activity>
