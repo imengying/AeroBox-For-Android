@@ -955,7 +955,7 @@ object SubscriptionParser {
                     typeRaw,
                     obj.optString("protocol", "").ifBlank { null },
                     obj.optString("proto", "").ifBlank { null },
-                    obj.optBoolean("quic", false)
+                    parseBooleanOrNull(jsonScalarString(obj.opt("quic")))
                 )
             } else {
                 null

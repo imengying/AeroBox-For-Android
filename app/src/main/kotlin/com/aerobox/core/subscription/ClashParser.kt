@@ -455,6 +455,8 @@ object ClashParser {
         return values.firstOrNull { !it.isNullOrBlank() }?.trim()?.takeIf { it.isNotEmpty() }
     }
 
+    // Clash entries already matched a Naive type above, so unknown/blank protocol
+    // values can safely fall back to the default HTTPS transport.
     private fun resolveNaiveProtocol(type: String, protocol: String?, proto: String?, quic: Boolean?): String {
         return when {
             type == "naive+quic" || quic == true -> "quic"

@@ -13,6 +13,7 @@ import com.aerobox.core.connection.ConnectionFixAction
 import com.aerobox.core.connection.ConnectionIssue
 import com.aerobox.core.geo.GeoAssetManager
 import com.aerobox.core.network.NodeAddressFamilyResolver
+import com.aerobox.core.network.PublicIpDetector
 import com.aerobox.data.model.IPv6Mode
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.NodeLatencyState
@@ -29,7 +30,6 @@ import com.aerobox.utils.formatDuration
 import com.aerobox.utils.toTrafficStats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,24 +52,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.ConnectionPool
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import java.io.IOException
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val POST_CONNECT_IP_DETECT_DELAY_MS = 500L
         const val NODE_TEST_TIMEOUT_MS = 5000
         const val NODE_TEST_CONCURRENCY = 10
-        val IPV4_REGEX = Regex("""^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$""")
-        val IPV6_REGEX = Regex("""^[0-9A-Fa-f:]+(%[0-9A-Za-z._~-]+)?$""")
     }
 
     private data class UrlTestSettings(
@@ -81,18 +69,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val nodeDao = AeroBoxApplication.database.proxyNodeDao()
     private val vpnRepository = AeroBoxApplication.vpnRepository
     private val subscriptionRepository = SubscriptionRepository(appContext)
-    // Standalone instance — intentionally NOT derived from SharedHttpClient so that
-    // dispatcher.cancelAll() in onCleared() / fetchPublicIp() does not cancel
-    // subscription refreshes or Geo-asset downloads running on the shared pool.
-    private val ipCheckClient = OkHttpClient.Builder()
-        .callTimeout(5, TimeUnit.SECONDS)
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(3, TimeUnit.SECONDS)
-        // Zero idle connections to ensure fresh sockets per detection,
-        // avoiding stale connections from before VPN routing changed.
-        .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
-        .retryOnConnectionFailure(false)
-        .build()
+    private val ipDetector = PublicIpDetector()
 
     val vpnState: StateFlow<VpnState> = VpnStateManager.vpnState
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VpnState())
@@ -172,8 +149,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         detectIpJob?.cancel()
         connectWatchdogJob?.cancel()
-        ipCheckClient.dispatcher.cancelAll()
-        ipCheckClient.connectionPool.evictAll()
+        ipDetector.shutdown()
         super.onCleared()
     }
 
@@ -535,104 +511,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun fetchPublicIp(node: ProxyNode?): String = withContext(Dispatchers.IO) {
-        val client = ipCheckClient
-        val directIpv4Endpoints = listOf(
-            "https://4.ipw.cn",
-            "https://api.ip.sb/ip"
-        )
-        val directIpv6Endpoints = listOf(
-            "https://6.ipw.cn",
-            "https://api6.ipify.org"
-        )
-        val proxiedIpv4Endpoints = listOf(
-            "https://api4.ipify.org",
-            "https://v4.ident.me"
-        )
-        val proxiedIpv6Endpoints = listOf(
-            "https://api6.ipify.org",
-            "https://v6.ident.me"
-        )
+    private suspend fun fetchPublicIp(node: ProxyNode?): String {
         val preferIpv6Only = node?.let { NodeAddressFamilyResolver.isIpv6Only(it) } == true
         val useProxyFriendlyEndpoints = vpnState.value.isConnected
-        val ipv4Endpoints = if (useProxyFriendlyEndpoints) {
-            proxiedIpv4Endpoints
-        } else {
-            directIpv4Endpoints + proxiedIpv4Endpoints
-        }
-        val ipv6Endpoints = if (useProxyFriendlyEndpoints) {
-            proxiedIpv6Endpoints
-        } else {
-            directIpv6Endpoints + proxiedIpv6Endpoints
-        }
-        val endpointGroups = if (preferIpv6Only) {
-            listOf(ipv6Endpoints)
-        } else {
-            listOf(ipv4Endpoints, ipv6Endpoints)
-        }
-
-        for (group in endpointGroups) {
-            val detected = supervisorScope {
-                val uniqueEndpoints = group.distinct()
-                val resultChannel = Channel<String?>(capacity = uniqueEndpoints.size)
-                val jobs = uniqueEndpoints.map { endpoint ->
-                    launch {
-                        resultChannel.trySend(fetchIpFromEndpoint(client, endpoint))
-                    }
-                }
-
-                try {
-                    repeat(jobs.size) {
-                        val ip = resultChannel.receive()
-                        if (!ip.isNullOrBlank()) {
-                            return@supervisorScope ip
-                        }
-                    }
-                    null
-                } finally {
-                    jobs.forEach { it.cancel() }
-                    resultChannel.close()
-                }
-            }
-
-            if (!detected.isNullOrBlank()) {
-                return@withContext detected
-            }
-        }
-
-        // NOTE: do NOT call dispatcher.cancelAll() here — a new detection round
-        // may already be in-flight on the same ipCheckClient.  Individual OkHttp
-        // calls are cancelled via invokeOnCancellation in fetchIpFromEndpoint.
-        appContext.getString(com.aerobox.R.string.detect_failed_tap_retry)
+        return ipDetector.detect(preferIpv6Only, useProxyFriendlyEndpoints)
+            ?: appContext.getString(com.aerobox.R.string.detect_failed_tap_retry)
     }
-
-    private suspend fun fetchIpFromEndpoint(client: OkHttpClient, endpoint: String): String? =
-        kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-            val request = Request.Builder()
-                .url(endpoint)
-                .header("User-Agent", "AeroBox/IP-Check")
-                .header("Connection", "close")
-                .build()
-            val call = client.newCall(request)
-            continuation.invokeOnCancellation { call.cancel() }
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (continuation.isActive) {
-                        continuation.resume(null)
-                    }
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    response.use {
-                        val ip = if (it.isSuccessful) it.body.string().trim() else null
-                        val normalized = ip?.takeIf(::isLikelyIpAddress)
-                        if (continuation.isActive) {
-                            continuation.resume(normalized)
-                        }
-                    }
-                }
-            })
-        }
 
     private suspend fun loadUrlTestSettings(): UrlTestSettings {
         val preferences = PreferenceManager.readVpnConfigPreferences(appContext)
@@ -645,11 +529,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             directDns = safeDirectDns,
             ipv6Mode = preferences.ipv6Mode
         )
-    }
-
-    private fun isLikelyIpAddress(value: String): Boolean {
-        val text = value.trim()
-        return IPV4_REGEX.matches(text) || (text.contains(':') && IPV6_REGEX.matches(text))
     }
 
     private fun handleConnectionFailure(context: Context, rawError: String) {
