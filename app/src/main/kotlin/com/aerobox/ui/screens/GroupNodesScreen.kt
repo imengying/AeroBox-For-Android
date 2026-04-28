@@ -49,7 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aerobox.R
 import com.aerobox.data.model.ProxyNode
 import com.aerobox.data.model.isLocalGroup
-import com.aerobox.data.repository.SubscriptionRepository
+import com.aerobox.AeroBoxApplication
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,7 +60,7 @@ fun GroupNodesScreen(
 ) {
     val isUngrouped = subscriptionId == 0L
     val context = LocalContext.current
-    val repository = remember(context) { SubscriptionRepository(context) }
+    val repository = AeroBoxApplication.subscriptionRepository
     val subscription by repository.observeSubscriptionById(subscriptionId)
         .collectAsStateWithLifecycle(initialValue = null)
     val nodes by repository.observeNodesInGroup(subscriptionId)

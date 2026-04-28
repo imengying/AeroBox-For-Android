@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aerobox.R
+import com.aerobox.AeroBoxApplication
 import com.aerobox.core.subscription.ParseDiagnostics
 import com.aerobox.data.model.Subscription
 import com.aerobox.data.model.isLocalGroup
@@ -50,7 +51,7 @@ data class PendingSubscriptionLink(
 
 class SubscriptionViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
-    private val repository = SubscriptionRepository(appContext)
+    private val repository = AeroBoxApplication.subscriptionRepository
 
     val subscriptions = repository.getAllSubscriptions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -320,13 +321,15 @@ class SubscriptionViewModel(application: Application) : AndroidViewModel(applica
             _isLoading.value = true
             val result = runCatching {
                 val resolver = appContext.contentResolver
-                val displayName = resolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-                }
-                val sizeBytes = resolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val index = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (index >= 0 && cursor.moveToFirst()) cursor.getLong(index) else null
+                var displayName: String? = null
+                var sizeBytes: Long? = null
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
+                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (sizeIdx >= 0) sizeBytes = cursor.getLong(sizeIdx)
+                    }
                 }
                 if (sizeBytes != null && sizeBytes > 8L * 1024L * 1024L) {
                     throw IllegalStateException(appContext.getString(R.string.local_file_too_large))

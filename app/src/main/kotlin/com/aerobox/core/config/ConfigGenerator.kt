@@ -145,11 +145,9 @@ object ConfigGenerator {
 
         config.put(
             "route",
-            RouteConfigBuilder.buildRoute(
-                routingMode = RoutingMode.DIRECT,
-                ipv6Mode = ipv6Mode,
-                nodeIsIpv6Only = nodeIsIpv6Only
-            )
+            JSONObject()
+                .put("auto_detect_interface", false)
+                .put("final", PROXY_OUTBOUND_TAG)
         )
 
         return config.toString(2)

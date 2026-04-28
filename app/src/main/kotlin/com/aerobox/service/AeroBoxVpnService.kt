@@ -81,6 +81,9 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
     private var commandServer: CommandServer? = null
     private var receiverRegistered = false
 
+    // Guards mutable tunnel state that is accessed from both the serviceScope
+    // coroutines and the libbox JNI callback thread (openTun).
+    private val tunnelLock = Any()
     private var lastNodeId: Long = -1L
     private var userRequestedStop = false
     private var reconnectAttempts = 0
@@ -229,8 +232,10 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
                         return@launch
                     }
 
-                    cachedConnectedNode = startRequest.node
-                    lastNodeId = startRequest.node.id
+                    synchronized(tunnelLock) {
+                        cachedConnectedNode = startRequest.node
+                        lastNodeId = startRequest.node.id
+                    }
                     logInfo("Prepared start request for ${nodeSummary(startRequest.node)}")
                     notificationManager.notify(
                         NOTIFICATION_ID,
@@ -364,18 +369,20 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
             commandServer = null
         }
 
-        runCatching {
-            vpnInterface?.close()
-            vpnInterface = null
+        synchronized(tunnelLock) {
+            runCatching {
+                vpnInterface?.close()
+                vpnInterface = null
+            }
+
+            if (clearCachedNode) {
+                cachedConnectedNode = null
+            }
         }
 
         if (unregisterReceiver && receiverRegistered) {
             runCatching { unregisterReceiver(closeReceiver) }
             receiverRegistered = false
-        }
-
-        if (clearCachedNode) {
-            cachedConnectedNode = null
         }
 
         if (stopForegroundNotification) {
@@ -551,9 +558,14 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
 
         val pfd = builder.establish()
             ?: error("android: failed to establish VPN interface")
-        vpnInterface = pfd
-        reconnectAttempts = 0
-        val connectedNode = cachedConnectedNode
+        val connectedNode: ProxyNode?
+        synchronized(tunnelLock) {
+            // Close any previous fd to prevent leaks during rapid switch
+            runCatching { vpnInterface?.close() }
+            vpnInterface = pfd
+            reconnectAttempts = 0
+            connectedNode = cachedConnectedNode
+        }
         VpnStateManager.clearLastError()
         VpnStateManager.updateConnectionState(true, connectedNode)
         logInfo("VPN interface established for ${nodeSummary(connectedNode)}")
@@ -609,28 +621,38 @@ class AeroBoxVpnService : VpnService(), PlatformInterfaceWrapper, CommandServerH
         return result
     }
 
+    // ─── Cached Reflection Helpers ───
+
+    // Cache resolved Method objects keyed by (Class, methodName) to avoid
+    // scanning the methods array on every invocation.
+    private data class CachedMethod(val method: java.lang.reflect.Method?)
+
+    private val methodCache = java.util.concurrent.ConcurrentHashMap<Pair<Class<*>, String>, CachedMethod>()
+
+    private fun cachedMethod(clazz: Class<*>, name: String): java.lang.reflect.Method? {
+        return methodCache.getOrPut(clazz to name) {
+            CachedMethod(clazz.methods.firstOrNull { it.parameterCount == 0 && it.name == name })
+        }.method
+    }
+
     private fun resolveNoArgMember(target: Any, memberName: String): Any? {
         val getterName = "get" + memberName.replaceFirstChar { it.uppercaseChar() }
         return runCatching {
-            target.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && (method.name == memberName || method.name == getterName)
-            }?.invoke(target)
+            val method = cachedMethod(target.javaClass, memberName)
+                ?: cachedMethod(target.javaClass, getterName)
+            method?.invoke(target)
         }.getOrNull()
     }
 
     private fun iteratorHasNext(iterator: Any): Boolean {
         return runCatching {
-            iterator.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && method.name == "hasNext"
-            }?.invoke(iterator) as? Boolean
+            cachedMethod(iterator.javaClass, "hasNext")?.invoke(iterator) as? Boolean
         }.getOrNull() == true
     }
 
     private fun iteratorNext(iterator: Any): Any? {
         return runCatching {
-            iterator.javaClass.methods.firstOrNull { method ->
-                method.parameterCount == 0 && method.name == "next"
-            }?.invoke(iterator)
+            cachedMethod(iterator.javaClass, "next")?.invoke(iterator)
         }.getOrNull()
     }
 

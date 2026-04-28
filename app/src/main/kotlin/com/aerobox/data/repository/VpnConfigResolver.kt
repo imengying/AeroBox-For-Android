@@ -20,9 +20,7 @@ class VpnConfigResolver(private val context: Context) {
     }
 
     private val nodeDao = AeroBoxApplication.database.proxyNodeDao()
-    private val subscriptionRepository by lazy {
-        SubscriptionRepository(context)
-    }
+    private val subscriptionRepository get() = AeroBoxApplication.subscriptionRepository
 
     suspend fun resolveSelectedNode(): ProxyNode? {
         val selectedId = PreferenceManager.lastSelectedNodeIdFlow(context).first()

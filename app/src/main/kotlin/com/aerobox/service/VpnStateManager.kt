@@ -2,6 +2,7 @@ package com.aerobox.service
 
 import com.aerobox.AeroBoxApplication
 import com.aerobox.data.model.ProxyNode
+import com.aerobox.data.model.TrafficStats
 import com.aerobox.data.model.VpnState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,22 +60,19 @@ object VpnStateManager {
     ) {
         _vpnState.update { current ->
             current.copy(
-                uploadSpeed = uploadSpeed,
-                downloadSpeed = downloadSpeed,
-                totalUpload = (current.totalUpload + uploadDelta).coerceAtLeast(0L),
-                totalDownload = (current.totalDownload + downloadDelta).coerceAtLeast(0L)
+                traffic = TrafficStats(
+                    uploadSpeed = uploadSpeed,
+                    downloadSpeed = downloadSpeed,
+                    totalUpload = (current.totalUpload + uploadDelta).coerceAtLeast(0L),
+                    totalDownload = (current.totalDownload + downloadDelta).coerceAtLeast(0L)
+                )
             )
         }
     }
 
     fun resetTrafficSession() {
         _vpnState.update { current ->
-            current.copy(
-                uploadSpeed = 0,
-                downloadSpeed = 0,
-                totalUpload = 0,
-                totalDownload = 0
-            )
+            current.copy(traffic = TrafficStats())
         }
     }
 }

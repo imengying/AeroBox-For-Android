@@ -3,6 +3,7 @@ package com.aerobox.data.repository
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import com.aerobox.AeroBoxApplication
 import com.aerobox.core.config.ConfigGenerator
 import com.aerobox.core.logging.RuntimeLogBuffer
 import com.aerobox.core.network.NodeAddressFamilyResolver
@@ -36,9 +37,7 @@ class VpnRepository(private val context: Context) {
     }
 
     private val configResolver = VpnConfigResolver(context)
-    private val subscriptionRepository by lazy {
-        SubscriptionRepository(context)
-    }
+    private val subscriptionRepository get() = AeroBoxApplication.subscriptionRepository
 
     suspend fun connectSelectedNode(): VpnConnectionResult {
         val node = configResolver.resolveSelectedNode() ?: return VpnConnectionResult.NoNodeAvailable

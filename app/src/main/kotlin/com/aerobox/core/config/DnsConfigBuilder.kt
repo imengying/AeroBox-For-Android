@@ -100,13 +100,15 @@ internal object DnsConfigBuilder {
                 dnsRules.put(
                     JSONObject()
                         .put("domain", JSONArray().put(serverDomain))
+                        .put("action", "route")
                         .put("server", ConfigGenerator.DNS_DIRECT_TAG)
                 )
             }
-        if (enableGeoCnDomainRule) {
+        if (routingMode == RoutingMode.RULE_BASED && enableGeoCnDomainRule) {
             dnsRules.put(
                 JSONObject()
                     .put("rule_set", JSONArray().put("geosite-cn"))
+                    .put("action", "route")
                     .put("server", ConfigGenerator.DNS_DIRECT_TAG)
             )
         }

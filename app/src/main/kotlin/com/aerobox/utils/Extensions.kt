@@ -9,14 +9,7 @@ import com.aerobox.data.model.TrafficStats
 import com.aerobox.data.model.VpnState
 import kotlin.math.max
 
-fun VpnState.toTrafficStats(): TrafficStats {
-    return TrafficStats(
-        uploadSpeed = uploadSpeed,
-        downloadSpeed = downloadSpeed,
-        totalUpload = totalUpload,
-        totalDownload = totalDownload
-    )
-}
+fun VpnState.toTrafficStats(): TrafficStats = traffic
 
 fun Long.formatDuration(): String {
     if (this <= 0L) return "00:00:00"

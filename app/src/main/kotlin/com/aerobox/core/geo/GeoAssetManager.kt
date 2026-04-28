@@ -26,6 +26,14 @@ object GeoAssetManager {
     private const val TAG = "GeoAssetManager"
     const val RULE_SET_UNAVAILABLE_MESSAGE = "Geo rule-set 资源不可用，请先更新规则资源后重试"
 
+    data class GeoUpdateResult(
+        val geoIpOk: Boolean,
+        val geoSiteCnOk: Boolean,
+        val geoAdsOk: Boolean
+    ) {
+        val allOk: Boolean get() = geoIpOk && geoSiteCnOk && geoAdsOk
+    }
+
     private const val GEOIP_REPO = "SagerNet/sing-geoip"
     private const val GEOSITE_REPO = "SagerNet/sing-geosite"
 
@@ -73,7 +81,7 @@ object GeoAssetManager {
     fun getGeoSiteSize(context: Context): String = formatFileSize(getGeoSiteFile(context))
     fun getGeoAdsSize(context: Context): String = formatFileSize(getGeoAdsFile(context))
 
-    suspend fun updateAll(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun updateAll(context: Context): GeoUpdateResult = withContext(Dispatchers.IO) {
         val ipOk = downloadFile(GEOIP_CN_URL, getGeoIpFile(context))
         if (ipOk) {
             writeVersionFile(getGeoIpVersionFile(context), fetchLatestReleaseTag(GEOIP_REPO))
@@ -83,7 +91,7 @@ object GeoAssetManager {
         if (cnOk && adsOk) {
             writeVersionFile(getGeoSiteVersionFile(context), fetchLatestReleaseTag(GEOSITE_REPO))
         }
-        ipOk && cnOk && adsOk
+        GeoUpdateResult(geoIpOk = ipOk, geoSiteCnOk = cnOk, geoAdsOk = adsOk)
     }
 
     suspend fun ensureRuleSetAssets(context: Context): Boolean = withContext(Dispatchers.IO) {
@@ -92,8 +100,8 @@ object GeoAssetManager {
             return@withContext true
         }
 
-        val updated = updateAll(context)
-        val available = updated && hasLocalFiles(context)
+        val result = updateAll(context)
+        val available = result.allOk && hasLocalFiles(context)
         if (!available) {
             Log.w(TAG, RULE_SET_UNAVAILABLE_MESSAGE)
         }

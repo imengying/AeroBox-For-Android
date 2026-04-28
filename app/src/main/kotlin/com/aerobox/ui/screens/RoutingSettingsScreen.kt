@@ -163,11 +163,19 @@ fun RoutingSettingsScreen(
                         if (!geoUpdating) {
                             geoUpdating = true
                             scope.launch {
-                                val ok = GeoAssetManager.updateAll(context)
+                                val result = GeoAssetManager.updateAll(context)
                                 geoUpdating = false
-                                snackbarHostState.showSnackbar(
-                                    if (ok) "路由资源更新完成" else "路由资源更新失败，请检查网络"
-                                )
+                                val message = if (result.allOk) {
+                                    "路由资源更新完成"
+                                } else {
+                                    val failed = buildList {
+                                        if (!result.geoIpOk) add("GeoIP")
+                                        if (!result.geoSiteCnOk) add("GeoSite-CN")
+                                        if (!result.geoAdsOk) add("GeoAds")
+                                    }
+                                    "${failed.joinToString("、")} 更新失败，请检查网络"
+                                }
+                                snackbarHostState.showSnackbar(message)
                             }
                         }
                     },
